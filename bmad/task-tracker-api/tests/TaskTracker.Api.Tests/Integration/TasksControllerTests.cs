@@ -1,0 +1,451 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using TaskTracker.Api.Features.Auth.Contracts;
+using TaskTracker.Api.Infrastructure.Persistence.Entities;
+
+namespace TaskTracker.Api.Tests.Integration;
+
+public class TasksControllerTests : IClassFixture<AuthTestFactory>
+{
+    private readonly HttpClient _client;
+    private readonly AuthTestFactory _factory;
+
+    public TasksControllerTests(AuthTestFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task Create_WithValidPayload_ReturnsCreatedAndPersistsOwnedTask()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.create.valid@example.com");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/tasks");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Content = JsonContent.Create(new
+        {
+            title = "Plan sprint backlog",
+            description = "Draft story priorities for next sprint",
+            dueAtUtc = "2026-04-27T18:00:00Z",
+            priority = "Medium",
+            category = "Planning"
+        });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("Plan sprint backlog", payload.GetProperty("title").GetString());
+        Assert.Equal("medium", payload.GetProperty("priority").GetString());
+        Assert.Equal("planning", payload.GetProperty("category").GetString());
+        Assert.False(payload.GetProperty("isCompleted").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("createdAtUtc").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("updatedAtUtc").GetString()));
+
+        var taskId = payload.GetProperty("id").GetGuid();
+        var persistedTask = await _factory.FindTaskByIdAsync(taskId);
+
+        Assert.NotNull(persistedTask);
+        Assert.Equal(caller.UserId, persistedTask!.UserId);
+        Assert.Equal("medium", persistedTask.Priority);
+        Assert.Equal("planning", persistedTask.Category);
+        Assert.False(persistedTask.IsCompleted);
+    }
+
+    [Fact]
+    public async Task Create_WithInvalidPayload_ReturnsValidationProblemDetailsAndDoesNotPersist()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.create.invalid@example.com");
+        var countBefore = await _factory.CountTasksForUserAsync(caller.UserId);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/tasks");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Content = JsonContent.Create(new
+        {
+            title = "",
+            description = new string('x', 2001),
+            priority = "urgent",
+            category = ""
+        });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/validation", payload.GetProperty("type").GetString());
+        Assert.Equal("Validation failed", payload.GetProperty("title").GetString());
+        Assert.Equal(400, payload.GetProperty("status").GetInt32());
+        Assert.Equal("validation.request.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+        Assert.True(payload.GetProperty("errors").TryGetProperty("title", out _));
+        Assert.True(payload.GetProperty("errors").TryGetProperty("description", out _));
+        Assert.True(payload.GetProperty("errors").TryGetProperty("priority", out _));
+        Assert.True(payload.GetProperty("errors").TryGetProperty("category", out _));
+
+        var countAfter = await _factory.CountTasksForUserAsync(caller.UserId);
+        Assert.Equal(countBefore, countAfter);
+    }
+
+    [Fact]
+    public async Task Create_WithMalformedDateType_ReturnsValidationProblemDetailsWithStableCode()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.create.malformed@example.com");
+        var countBefore = await _factory.CountTasksForUserAsync(caller.UserId);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/tasks");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Content = JsonContent.Create(new
+        {
+            title = "Malformed due date",
+            description = "invalid dueAtUtc type",
+            dueAtUtc = "not-a-date",
+            priority = "medium",
+            category = "validation"
+        });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/validation", payload.GetProperty("type").GetString());
+        Assert.Equal("Validation failed", payload.GetProperty("title").GetString());
+        Assert.Equal(400, payload.GetProperty("status").GetInt32());
+        Assert.Equal("validation.request.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+        Assert.True(payload.GetProperty("errors").TryGetProperty("request", out _)
+            || payload.GetProperty("errors").TryGetProperty("dueAtUtc", out _));
+
+        var countAfter = await _factory.CountTasksForUserAsync(caller.UserId);
+        Assert.Equal(countBefore, countAfter);
+    }
+
+    [Fact]
+    public async Task Create_WithoutAuthentication_ReturnsUnauthorizedProblemDetails()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", new
+        {
+            title = "Unauthenticated attempt",
+            priority = "medium",
+            category = "planning"
+        });
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/authentication-failed", payload.GetProperty("type").GetString());
+        Assert.Equal("Authentication Failed", payload.GetProperty("title").GetString());
+        Assert.Equal(401, payload.GetProperty("status").GetInt32());
+        Assert.Equal("auth.session.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+    }
+
+    [Fact]
+    public async Task Create_WithPayloadUserId_DoesNotAllowOwnershipImpersonation()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.owner.caller@example.com");
+        var targetUser = await RegisterAndLoginWithUserAsync("tasks.owner.target@example.com");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/tasks");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var body = $$"""
+        {
+          "userId": "{{targetUser.UserId}}",
+          "title": "Ownership test",
+          "description": "Attempt to spoof owner",
+          "priority": "medium",
+          "category": "security"
+        }
+        """;
+
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var taskId = payload.GetProperty("id").GetGuid();
+        var persistedTask = await _factory.FindTaskByIdAsync(taskId);
+
+        Assert.NotNull(persistedTask);
+        Assert.Equal(caller.UserId, persistedTask!.UserId);
+        Assert.NotEqual(targetUser.UserId, persistedTask.UserId);
+    }
+
+    [Fact]
+    public async Task List_WithoutStateFilter_ReturnsOwnedTasksWithSummaryAndDeterministicOrdering()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.list.default@example.com");
+        var baseTime = new DateTime(2026, 4, 25, 12, 0, 0, DateTimeKind.Utc);
+
+        var activeNewest = await SeedTaskAsync(caller.UserId, "Active newest", false, baseTime.AddMinutes(3));
+        var activeOldest = await SeedTaskAsync(caller.UserId, "Active oldest", false, baseTime.AddMinutes(1));
+        var completedTask = await SeedTaskAsync(caller.UserId, "Completed", true, baseTime.AddMinutes(2));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/tasks");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, payload.GetProperty("summary").GetProperty("activeCount").GetInt32());
+        Assert.Equal(1, payload.GetProperty("summary").GetProperty("completedCount").GetInt32());
+
+        var items = payload.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(3, items.Length);
+
+        Assert.Equal(activeNewest.Id, items[0].GetProperty("id").GetGuid());
+        Assert.False(items[0].GetProperty("isCompleted").GetBoolean());
+
+        Assert.Equal(activeOldest.Id, items[1].GetProperty("id").GetGuid());
+        Assert.False(items[1].GetProperty("isCompleted").GetBoolean());
+
+        Assert.Equal(completedTask.Id, items[2].GetProperty("id").GetGuid());
+        Assert.True(items[2].GetProperty("isCompleted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task List_WithCompletedStateFilter_ReturnsOnlyCompletedOwnedTasks()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.list.completed@example.com");
+        var baseTime = new DateTime(2026, 4, 25, 12, 30, 0, DateTimeKind.Utc);
+
+        await SeedTaskAsync(caller.UserId, "Active task", false, baseTime.AddMinutes(1));
+        var completedTask = await SeedTaskAsync(caller.UserId, "Completed task", true, baseTime.AddMinutes(2));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/tasks?state=completed");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var items = payload.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal(completedTask.Id, items[0].GetProperty("id").GetGuid());
+        Assert.True(items[0].GetProperty("isCompleted").GetBoolean());
+
+        Assert.Equal(1, payload.GetProperty("summary").GetProperty("activeCount").GetInt32());
+        Assert.Equal(1, payload.GetProperty("summary").GetProperty("completedCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task List_DoesNotReturnTasksOwnedByAnotherUser()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.list.owner-a@example.com");
+        var otherUser = await RegisterAndLoginWithUserAsync("tasks.list.owner-b@example.com");
+
+        var ownTask = await SeedTaskAsync(caller.UserId, "Caller task", false, DateTime.UtcNow.AddMinutes(1));
+        await SeedTaskAsync(otherUser.UserId, "Other user task", true, DateTime.UtcNow.AddMinutes(2));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/tasks?state=all");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var items = payload.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal(ownTask.Id, items[0].GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_WithInvalidStateFilter_ReturnsValidationProblemDetails()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.list.invalid-state@example.com");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/tasks?state=archived");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/validation", payload.GetProperty("type").GetString());
+        Assert.Equal("Validation failed", payload.GetProperty("title").GetString());
+        Assert.Equal(400, payload.GetProperty("status").GetInt32());
+        Assert.Equal("validation.request.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+
+        var errors = payload.GetProperty("errors");
+        Assert.True(errors.TryGetProperty("state", out var stateErrors));
+        Assert.Contains("must be one of", stateErrors[0].GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Update_WithOwnedTask_UpdatesAllowedFieldsAndReturnsUpdatedPayload()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.update.owned@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Original title", false, DateTime.UtcNow.AddMinutes(-2));
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/tasks/{task.Id}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Content = JsonContent.Create(new
+        {
+            title = "Updated title",
+            description = "Updated description",
+            dueAtUtc = "2026-04-28T17:00:00Z",
+            priority = "High",
+            category = "Planning"
+        });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(task.Id, payload.GetProperty("id").GetGuid());
+        Assert.Equal("Updated title", payload.GetProperty("title").GetString());
+        Assert.Equal("Updated description", payload.GetProperty("description").GetString());
+        Assert.Equal("high", payload.GetProperty("priority").GetString());
+        Assert.Equal("planning", payload.GetProperty("category").GetString());
+
+        var updatedAtUtc = payload.GetProperty("updatedAtUtc").GetDateTime();
+        Assert.True(updatedAtUtc >= task.UpdatedAtUtc);
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.Equal("Updated title", persistedTask!.Title);
+        Assert.Equal("Updated description", persistedTask.Description);
+        Assert.Equal("high", persistedTask.Priority);
+        Assert.Equal("planning", persistedTask.Category);
+        Assert.Equal(task.UserId, persistedTask.UserId);
+        Assert.False(persistedTask.IsCompleted);
+    }
+
+    [Fact]
+    public async Task Update_WithoutAuthentication_ReturnsUnauthorizedProblemDetails()
+    {
+        var taskId = Guid.NewGuid();
+
+        var response = await _client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", new
+        {
+            title = "Unauthorized update",
+            description = "no auth",
+            dueAtUtc = "2026-04-28T17:00:00Z",
+            priority = "medium",
+            category = "planning"
+        });
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/authentication-failed", payload.GetProperty("type").GetString());
+        Assert.Equal("Authentication Failed", payload.GetProperty("title").GetString());
+        Assert.Equal(401, payload.GetProperty("status").GetInt32());
+        Assert.Equal("auth.session.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+    }
+
+    [Fact]
+    public async Task Update_WithInvalidPayload_ReturnsValidationProblemDetailsAndDoesNotMutateTask()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.update.invalid@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Keep title", false, DateTime.UtcNow.AddMinutes(-2));
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/tasks/{task.Id}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Content = new StringContent(
+            """
+            {
+              "title": "",
+              "description": "invalid",
+              "dueAtUtc": "2026-04-28T17:00:00",
+              "priority": "urgent",
+              "category": ""
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/validation", payload.GetProperty("type").GetString());
+        Assert.Equal("validation.request.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+
+        var errors = payload.GetProperty("errors");
+        Assert.True(errors.TryGetProperty("title", out _));
+        Assert.True(errors.TryGetProperty("priority", out _));
+        Assert.True(errors.TryGetProperty("category", out _));
+        Assert.True(errors.TryGetProperty("dueAtUtc", out _));
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.Equal("Keep title", persistedTask!.Title);
+        Assert.Equal("medium", persistedTask.Priority);
+    }
+
+    [Fact]
+    public async Task Update_WithNonOwnedTask_ReturnsForbiddenAndDoesNotMutateTask()
+    {
+        var owner = await RegisterAndLoginWithUserAsync("tasks.update.owner@example.com");
+        var attacker = await RegisterAndLoginWithUserAsync("tasks.update.attacker@example.com");
+        var task = await SeedTaskAsync(owner.UserId, "Owner title", false, DateTime.UtcNow.AddMinutes(-3));
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/tasks/{task.Id}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", attacker.Tokens.AccessToken);
+        request.Content = JsonContent.Create(new
+        {
+            title = "Malicious update",
+            description = "attempt",
+            dueAtUtc = "2026-04-28T17:00:00Z",
+            priority = "high",
+            category = "security"
+        });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/forbidden", payload.GetProperty("type").GetString());
+        Assert.Equal("Forbidden", payload.GetProperty("title").GetString());
+        Assert.Equal(403, payload.GetProperty("status").GetInt32());
+        Assert.Equal("auth.forbidden", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.Equal("Owner title", persistedTask!.Title);
+        Assert.Equal(owner.UserId, persistedTask.UserId);
+    }
+
+    private async Task<(Guid UserId, LoginResponse Tokens)> RegisterAndLoginWithUserAsync(string email)
+    {
+        var registerResponse = await _client.PostAsJsonAsync("/api/v1/auth/register", new RegisterRequest(email, "StrongPass123!"));
+        var registerPayload = (await registerResponse.Content.ReadFromJsonAsync<RegisterResponse>())!;
+
+        var loginResponse = await _client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "StrongPass123!"));
+        var loginPayload = (await loginResponse.Content.ReadFromJsonAsync<LoginResponse>())!;
+
+        return (registerPayload.UserId, loginPayload);
+    }
+
+    private async Task<TaskItem> SeedTaskAsync(Guid userId, string title, bool isCompleted, DateTime updatedAtUtc)
+    {
+        var now = updatedAtUtc.AddMinutes(-1);
+        return await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Title = title,
+            Description = $"{title} description",
+            DueAtUtc = null,
+            Priority = "medium",
+            Category = "planning",
+            IsCompleted = isCompleted,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = updatedAtUtc
+        });
+    }
+}

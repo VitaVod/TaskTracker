@@ -1,0 +1,293 @@
+<main class="task-list-page">
+  <section class="task-list-shell">
+    <header>
+      <p class="eyebrow">TaskTracker / Tasks</p>
+      <h1>Task list</h1>
+      <p class="subtitle">Use the filters to focus on active work or review completed items.</p>
+      <a routerLink="/tasks/new" class="create-link">Create a task</a>
+    </header>
+
+    <nav class="filter-bar" aria-label="Task state filters">
+      @for (filter of filterOptions; track filter.value) {
+        <button
+          type="button"
+          class="filter-button"
+          [class.active]="selectedFilter === filter.value"
+          [attr.aria-pressed]="selectedFilter === filter.value"
+          [attr.aria-label]="filter.ariaLabel"
+          (click)="setFilter(filter.value)"
+          (keydown.enter)="setFilterFromKeyboard($event, filter.value)"
+          (keydown.space)="setFilterFromKeyboard($event, filter.value)">
+          {{ filter.label }}
+        </button>
+      }
+    </nav>
+
+    <p class="summary" aria-label="Task summary counts">
+      Active: {{ activeCount }} | Completed: {{ completedCount }}
+    </p>
+
+    <p class="sr-only" aria-live="polite">{{ liveMessage }}</p>
+
+    @if (isLoading) {
+      <p class="status">Loading tasks...</p>
+    } @else if (errorMessage) {
+      <p class="status error">{{ errorMessage }}</p>
+    } @else {
+      @if (selectedFilter === 'all') {
+        <section class="segment" aria-label="Active tasks segment">
+          <h2>Active tasks</h2>
+          @if (activeTasks.length === 0) {
+            <p class="status">No active tasks found.</p>
+          } @else {
+            <ul class="task-list">
+              @for (task of activeTasks; track trackByTaskId($index, task)) {
+                <li>
+                  <article class="task-card">
+                    <div class="task-header-row">
+                      <h3>{{ task.title }}</h3>
+                      <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                    </div>
+
+                    @if (isEditing(task)) {
+                      <form class="edit-form" [formGroup]="editForm" (ngSubmit)="submitEdit()" novalidate>
+                        <label for="edit-title">Title</label>
+                        <input id="edit-title" type="text" formControlName="title" maxlength="160" />
+                        @if (editForm.controls.title.invalid && editForm.controls.title.touched) {
+                          <p class="field-error">Title is required and must be 160 characters or fewer.</p>
+                        }
+                        @if (fieldError('title')) {
+                          <p class="field-error">{{ fieldError('title') }}</p>
+                        }
+
+                        <label for="edit-description">Description</label>
+                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3"></textarea>
+                        @if (fieldError('description')) {
+                          <p class="field-error">{{ fieldError('description') }}</p>
+                        }
+
+                        <div class="row">
+                          <div>
+                            <label for="edit-dueAtUtc">Due date (UTC)</label>
+                            <input id="edit-dueAtUtc" type="datetime-local" formControlName="dueAtUtc" />
+                            @if (fieldError('dueAtUtc')) {
+                              <p class="field-error">{{ fieldError('dueAtUtc') }}</p>
+                            }
+                          </div>
+
+                          <div>
+                            <label for="edit-priority">Priority</label>
+                            <select id="edit-priority" formControlName="priority">
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                            @if (fieldError('priority')) {
+                              <p class="field-error">{{ fieldError('priority') }}</p>
+                            }
+                          </div>
+                        </div>
+
+                        <label for="edit-category">Category</label>
+                        <input id="edit-category" type="text" formControlName="category" maxlength="64" />
+                        @if (editForm.controls.category.invalid && editForm.controls.category.touched) {
+                          <p class="field-error">Category is required and must be 64 characters or fewer.</p>
+                        }
+                        @if (fieldError('category')) {
+                          <p class="field-error">{{ fieldError('category') }}</p>
+                        }
+
+                        @if (saveErrorMessage) {
+                          <p class="api-error">{{ saveErrorMessage }}</p>
+                        }
+
+                        <div class="edit-actions">
+                          <button type="submit" class="save-button" [disabled]="isSaving">
+                            {{ isSaving ? 'Saving...' : 'Save changes' }}
+                          </button>
+                          <button type="button" class="cancel-button" (click)="cancelEdit()">Cancel</button>
+                        </div>
+                      </form>
+                    } @else {
+                      <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ task.category }}</p>
+                    }
+                  </article>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <section class="segment" aria-label="Completed tasks segment">
+          <h2>Completed tasks</h2>
+          @if (completedTasks.length === 0) {
+            <p class="status">No completed tasks found.</p>
+          } @else {
+            <ul class="task-list">
+              @for (task of completedTasks; track trackByTaskId($index, task)) {
+                <li>
+                  <article class="task-card completed">
+                    <div class="task-header-row">
+                      <h3>{{ task.title }}</h3>
+                      <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                    </div>
+
+                    @if (isEditing(task)) {
+                      <form class="edit-form" [formGroup]="editForm" (ngSubmit)="submitEdit()" novalidate>
+                        <label for="edit-title">Title</label>
+                        <input id="edit-title" type="text" formControlName="title" maxlength="160" />
+                        @if (editForm.controls.title.invalid && editForm.controls.title.touched) {
+                          <p class="field-error">Title is required and must be 160 characters or fewer.</p>
+                        }
+                        @if (fieldError('title')) {
+                          <p class="field-error">{{ fieldError('title') }}</p>
+                        }
+
+                        <label for="edit-description">Description</label>
+                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3"></textarea>
+                        @if (fieldError('description')) {
+                          <p class="field-error">{{ fieldError('description') }}</p>
+                        }
+
+                        <div class="row">
+                          <div>
+                            <label for="edit-dueAtUtc">Due date (UTC)</label>
+                            <input id="edit-dueAtUtc" type="datetime-local" formControlName="dueAtUtc" />
+                            @if (fieldError('dueAtUtc')) {
+                              <p class="field-error">{{ fieldError('dueAtUtc') }}</p>
+                            }
+                          </div>
+
+                          <div>
+                            <label for="edit-priority">Priority</label>
+                            <select id="edit-priority" formControlName="priority">
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                            @if (fieldError('priority')) {
+                              <p class="field-error">{{ fieldError('priority') }}</p>
+                            }
+                          </div>
+                        </div>
+
+                        <label for="edit-category">Category</label>
+                        <input id="edit-category" type="text" formControlName="category" maxlength="64" />
+                        @if (editForm.controls.category.invalid && editForm.controls.category.touched) {
+                          <p class="field-error">Category is required and must be 64 characters or fewer.</p>
+                        }
+                        @if (fieldError('category')) {
+                          <p class="field-error">{{ fieldError('category') }}</p>
+                        }
+
+                        @if (saveErrorMessage) {
+                          <p class="api-error">{{ saveErrorMessage }}</p>
+                        }
+
+                        <div class="edit-actions">
+                          <button type="submit" class="save-button" [disabled]="isSaving">
+                            {{ isSaving ? 'Saving...' : 'Save changes' }}
+                          </button>
+                          <button type="button" class="cancel-button" (click)="cancelEdit()">Cancel</button>
+                        </div>
+                      </form>
+                    } @else {
+                      <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ task.category }}</p>
+                    }
+                  </article>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      } @else {
+        <section class="segment" [attr.aria-label]="selectedFilter === 'active' ? 'Active tasks segment' : 'Completed tasks segment'">
+          <h2>{{ selectedFilter === 'active' ? 'Active tasks' : 'Completed tasks' }}</h2>
+
+          @if (tasks.length === 0) {
+            <p class="status">No tasks found for this filter.</p>
+          } @else {
+            <ul class="task-list">
+              @for (task of tasks; track trackByTaskId($index, task)) {
+                <li>
+                  <article class="task-card" [class.completed]="task.isCompleted">
+                    <div class="task-header-row">
+                      <h3>{{ task.title }}</h3>
+                      <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                    </div>
+
+                    @if (isEditing(task)) {
+                      <form class="edit-form" [formGroup]="editForm" (ngSubmit)="submitEdit()" novalidate>
+                        <label for="edit-title">Title</label>
+                        <input id="edit-title" type="text" formControlName="title" maxlength="160" />
+                        @if (editForm.controls.title.invalid && editForm.controls.title.touched) {
+                          <p class="field-error">Title is required and must be 160 characters or fewer.</p>
+                        }
+                        @if (fieldError('title')) {
+                          <p class="field-error">{{ fieldError('title') }}</p>
+                        }
+
+                        <label for="edit-description">Description</label>
+                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3"></textarea>
+                        @if (fieldError('description')) {
+                          <p class="field-error">{{ fieldError('description') }}</p>
+                        }
+
+                        <div class="row">
+                          <div>
+                            <label for="edit-dueAtUtc">Due date (UTC)</label>
+                            <input id="edit-dueAtUtc" type="datetime-local" formControlName="dueAtUtc" />
+                            @if (fieldError('dueAtUtc')) {
+                              <p class="field-error">{{ fieldError('dueAtUtc') }}</p>
+                            }
+                          </div>
+
+                          <div>
+                            <label for="edit-priority">Priority</label>
+                            <select id="edit-priority" formControlName="priority">
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                            @if (fieldError('priority')) {
+                              <p class="field-error">{{ fieldError('priority') }}</p>
+                            }
+                          </div>
+                        </div>
+
+                        <label for="edit-category">Category</label>
+                        <input id="edit-category" type="text" formControlName="category" maxlength="64" />
+                        @if (editForm.controls.category.invalid && editForm.controls.category.touched) {
+                          <p class="field-error">Category is required and must be 64 characters or fewer.</p>
+                        }
+                        @if (fieldError('category')) {
+                          <p class="field-error">{{ fieldError('category') }}</p>
+                        }
+
+                        @if (saveErrorMessage) {
+                          <p class="api-error">{{ saveErrorMessage }}</p>
+                        }
+
+                        <div class="edit-actions">
+                          <button type="submit" class="save-button" [disabled]="isSaving">
+                            {{ isSaving ? 'Saving...' : 'Save changes' }}
+                          </button>
+                          <button type="button" class="cancel-button" (click)="cancelEdit()">Cancel</button>
+                        </div>
+                      </form>
+                    } @else {
+                      <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ task.category }}</p>
+                    }
+                  </article>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
+    }
+  </section>
+</main>
