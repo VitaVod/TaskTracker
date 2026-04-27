@@ -10,7 +10,20 @@ public enum TaskUpdateStatus
     NotFound
 }
 
+public enum TaskCompletionToggleStatus
+{
+    Updated,
+    Forbidden,
+    NotFound,
+    IdempotentReplay
+}
+
 public sealed record TaskUpdateResult(TaskUpdateStatus Status, TaskItem? Task);
+
+public sealed record TaskCompletionToggleResult(
+    TaskCompletionToggleStatus Status,
+    TaskItem? Task,
+    bool CompletionEventRecorded);
 
 public interface ITaskRepository
 {
@@ -28,6 +41,14 @@ public interface ITaskRepository
         DateTime? dueAtUtc,
         string priority,
         string category,
+        DateTime updatedAtUtc,
+        CancellationToken cancellationToken);
+
+    Task<TaskCompletionToggleResult> ToggleCompletionOwnedAsync(
+        Guid userId,
+        Guid taskId,
+        bool isCompleted,
+        string idempotencyKey,
         DateTime updatedAtUtc,
         CancellationToken cancellationToken);
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 using TaskTracker.Api.Features.Tasks.Contracts;
 using TaskTracker.Api.Infrastructure.Persistence;
 using TaskTracker.Api.Infrastructure.Persistence.Entities;
@@ -89,5 +90,103 @@ public class TaskRepository(TaskTrackerDbContext dbContext) : ITaskRepository
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return new TaskUpdateResult(TaskUpdateStatus.Updated, task);
+    }
+
+    public async Task<TaskCompletionToggleResult> ToggleCompletionOwnedAsync(
+        Guid userId,
+        Guid taskId,
+        bool isCompleted,
+        string idempotencyKey,
+        DateTime updatedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var task = await dbContext.Tasks.FirstOrDefaultAsync(existingTask => existingTask.Id == taskId, cancellationToken);
+        if (task is null)
+        {
+            return new TaskCompletionToggleResult(TaskCompletionToggleStatus.NotFound, null, false);
+        }
+
+        if (task.UserId != userId)
+        {
+            return new TaskCompletionToggleResult(TaskCompletionToggleStatus.Forbidden, null, false);
+        }
+
+        var existingCommand = await dbContext.TaskCompletionEvents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                completionEvent => completionEvent.TaskId == taskId
+                    && completionEvent.OwnerId == userId
+                    && completionEvent.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+
+        if (existingCommand is not null)
+        {
+            return new TaskCompletionToggleResult(TaskCompletionToggleStatus.IdempotentReplay, task, false);
+        }
+
+        var completionEventRecorded = false;
+        var stateChanged = task.IsCompleted != isCompleted;
+        if (stateChanged)
+        {
+            task.IsCompleted = isCompleted;
+            task.UpdatedAtUtc = updatedAtUtc;
+        }
+
+        dbContext.TaskCompletionEvents.Add(new TaskCompletionEvent
+        {
+            Id = Guid.NewGuid(),
+            TaskId = task.Id,
+            OwnerId = task.UserId,
+            EventName = isCompleted && stateChanged ? "TaskCompleted" : "TaskCompletionSet",
+            ResultingIsCompleted = isCompleted,
+            IdempotencyKey = idempotencyKey,
+            OccurredAtUtc = updatedAtUtc,
+            CreatedAtUtc = updatedAtUtc
+        });
+
+        // Progression should only react to true completion transitions, never duplicate retries.
+        completionEventRecorded = isCompleted && stateChanged;
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent duplicate request with the same idempotency key.
+            var replayTask = await dbContext.Tasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(existingTask => existingTask.Id == taskId && existingTask.UserId == userId, cancellationToken);
+
+            if (replayTask is null)
+            {
+                return new TaskCompletionToggleResult(TaskCompletionToggleStatus.NotFound, null, false);
+            }
+
+            return new TaskCompletionToggleResult(TaskCompletionToggleStatus.IdempotentReplay, replayTask, false);
+        }
+
+        var persistedTask = await dbContext.Tasks
+            .AsNoTracking()
+            .FirstOrDefaultAsync(existingTask => existingTask.Id == taskId && existingTask.UserId == userId, cancellationToken);
+
+        if (persistedTask is null)
+        {
+            return new TaskCompletionToggleResult(TaskCompletionToggleStatus.NotFound, null, false);
+        }
+
+        return new TaskCompletionToggleResult(TaskCompletionToggleStatus.Updated, persistedTask, completionEventRecorded);
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is SqlException sqlException)
+        {
+            return sqlException.Number is 2601 or 2627;
+        }
+
+        var message = exception.InnerException?.Message ?? exception.Message;
+        return message.Contains("unique", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
     }
 }

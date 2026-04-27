@@ -23,6 +23,8 @@ public record UpdateTaskRequest(
     string? Priority,
     string? Category);
 
+public record ToggleTaskCompletionRequest(bool? IsCompleted);
+
 public record TaskResponse(
     Guid Id,
     string Title,

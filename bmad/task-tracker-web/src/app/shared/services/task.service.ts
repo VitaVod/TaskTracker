@@ -1,4 +1,4 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -8,6 +8,7 @@ import {
   TaskListState,
   TaskProblemDetails,
   TaskResponse,
+  ToggleTaskCompletionRequest,
   UpdateTaskRequest
 } from '../models/task.models';
 
@@ -32,6 +33,19 @@ export class TaskService {
   updateTask(taskId: string, payload: UpdateTaskRequest): Observable<TaskResponse> {
     return this.httpClient
       .put<TaskResponse>(`${this.endpoint}/${taskId}`, payload)
+      .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));
+  }
+
+  toggleTaskCompletion(taskId: string, payload: ToggleTaskCompletionRequest, idempotencyKey: string): Observable<TaskResponse> {
+    return this.httpClient
+      .patch<TaskResponse>(
+        `${this.endpoint}/${taskId}/completion`,
+        payload,
+        {
+          headers: new HttpHeaders({
+            'Idempotency-Key': idempotencyKey
+          })
+        })
       .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));
   }
 

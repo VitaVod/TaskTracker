@@ -167,6 +167,73 @@ public class TasksController(
         return Ok(ToResponse(updateResult.Task!));
     }
 
+    [HttpPatch("{taskId}/completion")]
+    [ProducesResponseType<TaskResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ToggleCompletion(
+        [FromRoute] string taskId,
+        [FromBody] ToggleTaskCompletionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryResolveCurrentUserId(out var userId))
+        {
+            return UnauthorizedProblem("tasks.identity.invalid");
+        }
+
+        var errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+
+        if (!Guid.TryParse(taskId, out var parsedTaskId))
+        {
+            errors["taskId"] = ["The taskId route value must be a valid GUID."];
+        }
+
+        if (!request.IsCompleted.HasValue)
+        {
+            errors["isCompleted"] = ["The isCompleted field is required."];
+        }
+
+        if (!TryResolveIdempotencyKey(out var idempotencyKey, out var idempotencyError))
+        {
+            errors["idempotencyKey"] = [idempotencyError!];
+        }
+
+        if (errors.Count > 0)
+        {
+            return ValidationProblem("validation.request.invalid", errors);
+        }
+
+        var now = DateTime.UtcNow;
+        var toggleResult = await taskRepository.ToggleCompletionOwnedAsync(
+            userId,
+            parsedTaskId,
+            request.IsCompleted!.Value,
+            idempotencyKey!,
+            now,
+            cancellationToken);
+
+        if (toggleResult.Status == TaskCompletionToggleStatus.Forbidden)
+        {
+            return ForbiddenProblem("auth.forbidden");
+        }
+
+        if (toggleResult.Status == TaskCompletionToggleStatus.NotFound)
+        {
+            return NotFoundProblem("tasks.not_found", "Task could not be found.");
+        }
+
+        logger.LogInformation(
+            "Task completion toggled for task {TaskId} by user {UserId}. CompletionEventRecorded: {CompletionEventRecorded}. TraceId: {TraceId}",
+            parsedTaskId,
+            userId,
+            toggleResult.CompletionEventRecorded,
+            HttpContext.TraceIdentifier);
+
+        return Ok(ToResponse(toggleResult.Task!));
+    }
+
     private bool TryResolveCurrentUserId(out Guid userId)
     {
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
@@ -273,6 +340,34 @@ public class TasksController(
 
         errors["state"] = ["The state filter must be one of: active, completed, all."];
         return false;
+    }
+
+    private bool TryResolveIdempotencyKey(out string? idempotencyKey, out string? error)
+    {
+        idempotencyKey = null;
+        error = null;
+
+        if (!Request.Headers.TryGetValue("Idempotency-Key", out var values))
+        {
+            error = "Idempotency-Key header is required for completion toggle.";
+            return false;
+        }
+
+        var normalized = values.FirstOrDefault()?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            error = "Idempotency-Key header is required for completion toggle.";
+            return false;
+        }
+
+        if (!Guid.TryParse(normalized, out _))
+        {
+            error = "Idempotency-Key header must be a valid GUID.";
+            return false;
+        }
+
+        idempotencyKey = normalized;
+        return true;
     }
 
     private ObjectResult ValidationProblem(string code, Dictionary<string, string[]> errors)

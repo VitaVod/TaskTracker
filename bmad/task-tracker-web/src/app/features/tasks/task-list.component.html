@@ -46,7 +46,17 @@
                   <article class="task-card">
                     <div class="task-header-row">
                       <h3>{{ task.title }}</h3>
-                      <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                      <div class="task-actions">
+                        <button
+                          type="button"
+                          class="toggle-button"
+                          [disabled]="isToggleInFlight(task.id)"
+                          [attr.aria-label]="task.isCompleted ? 'Mark task ' + task.title + ' as active' : 'Mark task ' + task.title + ' as completed'"
+                          (click)="toggleCompletion(task, !task.isCompleted)">
+                          {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
+                        </button>
+                        <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                      </div>
                     </div>
 
                     @if (isEditing(task)) {
@@ -89,9 +99,13 @@
                         </div>
 
                         <label for="edit-category">Category</label>
-                        <input id="edit-category" type="text" formControlName="category" maxlength="64" />
+                        <select id="edit-category" formControlName="category">
+                          @for (category of categoryOptions; track category.value) {
+                            <option [value]="category.value">{{ category.label }}</option>
+                          }
+                        </select>
                         @if (editForm.controls.category.invalid && editForm.controls.category.touched) {
-                          <p class="field-error">Category is required and must be 64 characters or fewer.</p>
+                          <p class="field-error">Category is required.</p>
                         }
                         @if (fieldError('category')) {
                           <p class="field-error">{{ fieldError('category') }}</p>
@@ -110,7 +124,10 @@
                       </form>
                     } @else {
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
-                      <p class="meta">Priority: {{ task.priority }} | Category: {{ task.category }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
+                      @if (toggleError(task.id)) {
+                        <p class="api-error">{{ toggleError(task.id) }}</p>
+                      }
                     }
                   </article>
                 </li>
@@ -130,7 +147,17 @@
                   <article class="task-card completed">
                     <div class="task-header-row">
                       <h3>{{ task.title }}</h3>
-                      <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                      <div class="task-actions">
+                        <button
+                          type="button"
+                          class="toggle-button"
+                          [disabled]="isToggleInFlight(task.id)"
+                          [attr.aria-label]="task.isCompleted ? 'Mark task ' + task.title + ' as active' : 'Mark task ' + task.title + ' as completed'"
+                          (click)="toggleCompletion(task, !task.isCompleted)">
+                          {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
+                        </button>
+                        <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                      </div>
                     </div>
 
                     @if (isEditing(task)) {
@@ -173,9 +200,13 @@
                         </div>
 
                         <label for="edit-category">Category</label>
-                        <input id="edit-category" type="text" formControlName="category" maxlength="64" />
+                        <select id="edit-category" formControlName="category">
+                          @for (category of categoryOptions; track category.value) {
+                            <option [value]="category.value">{{ category.label }}</option>
+                          }
+                        </select>
                         @if (editForm.controls.category.invalid && editForm.controls.category.touched) {
-                          <p class="field-error">Category is required and must be 64 characters or fewer.</p>
+                          <p class="field-error">Category is required.</p>
                         }
                         @if (fieldError('category')) {
                           <p class="field-error">{{ fieldError('category') }}</p>
@@ -194,7 +225,10 @@
                       </form>
                     } @else {
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
-                      <p class="meta">Priority: {{ task.priority }} | Category: {{ task.category }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
+                      @if (toggleError(task.id)) {
+                        <p class="api-error">{{ toggleError(task.id) }}</p>
+                      }
                     }
                   </article>
                 </li>
@@ -215,7 +249,17 @@
                   <article class="task-card" [class.completed]="task.isCompleted">
                     <div class="task-header-row">
                       <h3>{{ task.title }}</h3>
-                      <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                      <div class="task-actions">
+                        <button
+                          type="button"
+                          class="toggle-button"
+                          [disabled]="isToggleInFlight(task.id)"
+                          [attr.aria-label]="task.isCompleted ? 'Mark task ' + task.title + ' as active' : 'Mark task ' + task.title + ' as completed'"
+                          (click)="toggleCompletion(task, !task.isCompleted)">
+                          {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
+                        </button>
+                        <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                      </div>
                     </div>
 
                     @if (isEditing(task)) {
@@ -258,9 +302,13 @@
                         </div>
 
                         <label for="edit-category">Category</label>
-                        <input id="edit-category" type="text" formControlName="category" maxlength="64" />
+                        <select id="edit-category" formControlName="category">
+                          @for (category of categoryOptions; track category.value) {
+                            <option [value]="category.value">{{ category.label }}</option>
+                          }
+                        </select>
                         @if (editForm.controls.category.invalid && editForm.controls.category.touched) {
-                          <p class="field-error">Category is required and must be 64 characters or fewer.</p>
+                          <p class="field-error">Category is required.</p>
                         }
                         @if (fieldError('category')) {
                           <p class="field-error">{{ fieldError('category') }}</p>
@@ -279,7 +327,10 @@
                       </form>
                     } @else {
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
-                      <p class="meta">Priority: {{ task.priority }} | Category: {{ task.category }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
+                      @if (toggleError(task.id)) {
+                        <p class="api-error">{{ toggleError(task.id) }}</p>
+                      }
                     }
                   </article>
                 </li>

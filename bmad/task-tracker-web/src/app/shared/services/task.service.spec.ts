@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { CreateTaskRequest, UpdateTaskRequest } from '../models/task.models';
+import { CreateTaskRequest, ToggleTaskCompletionRequest, UpdateTaskRequest } from '../models/task.models';
 import { TaskService } from './task.service';
 
 describe('TaskService', () => {
@@ -31,7 +31,7 @@ describe('TaskService', () => {
       description: 'Draft story priorities for next sprint',
       dueAtUtc: '2026-04-27T18:00:00Z',
       priority: 'medium',
-      category: 'planning'
+      category: 'work'
     };
 
     let responseBody: unknown;
@@ -49,7 +49,7 @@ describe('TaskService', () => {
       description: 'Draft story priorities for next sprint',
       dueAtUtc: '2026-04-27T18:00:00Z',
       priority: 'medium',
-      category: 'planning',
+      category: 'work',
       isCompleted: false,
       createdAtUtc: '2026-04-25T11:30:12Z',
       updatedAtUtc: '2026-04-25T11:30:12Z'
@@ -62,7 +62,7 @@ describe('TaskService', () => {
     const payload: CreateTaskRequest = {
       title: '',
       priority: 'medium',
-      category: 'planning'
+      category: 'work'
     };
 
     let receivedError: unknown;
@@ -131,7 +131,7 @@ describe('TaskService', () => {
           description: 'done',
           dueAtUtc: null,
           priority: 'low',
-          category: 'ops',
+          category: 'personal',
           isCompleted: true,
           createdAtUtc: '2026-04-25T11:30:12Z',
           updatedAtUtc: '2026-04-25T11:30:12Z'
@@ -152,7 +152,7 @@ describe('TaskService', () => {
       description: 'Finalize priorities after stakeholder sync',
       dueAtUtc: '2026-04-28T17:00:00Z',
       priority: 'high',
-      category: 'planning'
+      category: 'work'
     };
 
     let responseBody: unknown;
@@ -170,8 +170,38 @@ describe('TaskService', () => {
       description: 'Finalize priorities after stakeholder sync',
       dueAtUtc: '2026-04-28T17:00:00Z',
       priority: 'high',
-      category: 'planning',
+      category: 'work',
       isCompleted: false,
+      createdAtUtc: '2026-04-25T11:30:12Z',
+      updatedAtUtc: '2026-04-26T09:15:03Z'
+    });
+
+    expect(responseBody).toBeTruthy();
+  });
+
+  it('patches completion payload with idempotency header', () => {
+    const payload: ToggleTaskCompletionRequest = {
+      isCompleted: true
+    };
+
+    let responseBody: unknown;
+    service.toggleTaskCompletion('7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12', payload, 'idempotency-key-123').subscribe((response) => {
+      responseBody = response;
+    });
+
+    const request = httpMock.expectOne('/api/v1/tasks/7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12/completion');
+    expect(request.request.method).toBe('PATCH');
+    expect(request.request.body).toEqual(payload);
+    expect(request.request.headers.get('Idempotency-Key')).toBe('idempotency-key-123');
+
+    request.flush({
+      id: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
+      title: 'Plan sprint backlog v2',
+      description: 'Finalize priorities after stakeholder sync',
+      dueAtUtc: '2026-04-28T17:00:00Z',
+      priority: 'high',
+      category: 'work',
+      isCompleted: true,
       createdAtUtc: '2026-04-25T11:30:12Z',
       updatedAtUtc: '2026-04-26T09:15:03Z'
     });

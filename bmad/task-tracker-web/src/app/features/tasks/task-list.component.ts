@@ -3,7 +3,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { finalize } from 'rxjs/operators';
-import { TaskListState, TaskPriority, TaskProblemDetails, TaskResponse } from '../../shared/models/task.models';
+import { TASK_CATEGORY_OPTIONS, TaskCategory, TaskListState, TaskPriority, TaskProblemDetails, TaskResponse, isTaskCategory, toTaskCategoryLabel } from '../../shared/models/task.models';
 import { TaskService } from '../../shared/services/task.service';
 
 @Component({
@@ -16,6 +16,8 @@ import { TaskService } from '../../shared/services/task.service';
 export class TaskListComponent implements OnInit {
   private readonly taskService = inject(TaskService);
   private readonly formBuilder = inject(FormBuilder);
+
+  readonly categoryOptions = TASK_CATEGORY_OPTIONS;
 
   readonly filterOptions: ReadonlyArray<{ value: TaskListState; label: string; ariaLabel: string }> = [
     { value: 'all', label: 'All tasks', ariaLabel: 'Show all tasks' },
@@ -34,13 +36,15 @@ export class TaskListComponent implements OnInit {
   saveErrorMessage = '';
   liveMessage = '';
   saveFieldErrors: Record<string, string[]> = {};
+  toggleErrors: Record<string, string> = {};
+  private readonly completionToggleInFlight = new Set<string>();
 
   readonly editForm = this.formBuilder.nonNullable.group({
     title: ['', [Validators.required, Validators.maxLength(160)]],
     description: ['', [Validators.maxLength(2000)]],
     dueAtUtc: [''],
     priority: ['medium' as TaskPriority, [Validators.required]],
-    category: ['', [Validators.required, Validators.maxLength(64)]]
+    category: ['work' as TaskCategory, [Validators.required]]
   });
 
   ngOnInit(): void {
@@ -78,7 +82,7 @@ export class TaskListComponent implements OnInit {
       description: task.description,
       dueAtUtc: this.toDateTimeLocal(task.dueAtUtc),
       priority: task.priority,
-      category: task.category
+      category: this.toEditableCategory(task.category)
     });
   }
 
@@ -91,7 +95,7 @@ export class TaskListComponent implements OnInit {
       description: '',
       dueAtUtc: '',
       priority: 'medium',
-      category: ''
+      category: 'work'
     });
   }
 
@@ -114,7 +118,7 @@ export class TaskListComponent implements OnInit {
       description: rawValue.description.trim(),
       dueAtUtc: rawValue.dueAtUtc.trim() === '' ? null : new Date(rawValue.dueAtUtc).toISOString(),
       priority: rawValue.priority,
-      category: rawValue.category.trim()
+      category: rawValue.category
     };
 
     this.isSaving = true;
@@ -139,6 +143,43 @@ export class TaskListComponent implements OnInit {
 
   fieldError(fieldName: 'title' | 'description' | 'dueAtUtc' | 'priority' | 'category'): string {
     return this.saveFieldErrors[fieldName]?.[0] ?? '';
+  }
+
+  toggleError(taskId: string): string {
+    return this.toggleErrors[taskId] ?? '';
+  }
+
+  isToggleInFlight(taskId: string): boolean {
+    return this.completionToggleInFlight.has(taskId);
+  }
+
+  toggleCompletion(task: TaskResponse, isCompleted: boolean): void {
+    if (this.completionToggleInFlight.has(task.id)) {
+      return;
+    }
+
+    delete this.toggleErrors[task.id];
+    this.completionToggleInFlight.add(task.id);
+
+    this.taskService
+      .toggleTaskCompletion(task.id, { isCompleted }, this.newIdempotencyKey())
+      .pipe(finalize(() => { this.completionToggleInFlight.delete(task.id); }))
+      .subscribe({
+        next: (updatedTask) => {
+          this.reconcileTaskAfterCompletionToggle(task, updatedTask);
+          this.liveMessage = updatedTask.isCompleted
+            ? `Task ${updatedTask.title} marked completed.`
+            : `Task ${updatedTask.title} marked active.`;
+        },
+        error: (error: TaskProblemDetails) => {
+          this.toggleErrors[task.id] = error.title ?? error.detail ?? 'Task completion update failed.';
+          this.liveMessage = this.toggleErrors[task.id];
+        }
+      });
+  }
+
+  toCategoryLabel(category: string): string {
+    return toTaskCategoryLabel(category);
   }
 
   get activeTasks(): TaskResponse[] {
@@ -204,5 +245,69 @@ export class TaskListComponent implements OnInit {
     }
 
     return `Showing ${this.activeCount} active and ${this.completedCount} completed tasks.`;
+  }
+
+  private reconcileTaskAfterCompletionToggle(previousTask: TaskResponse, updatedTask: TaskResponse): void {
+    if (!previousTask.isCompleted && updatedTask.isCompleted) {
+      this.activeCount = Math.max(0, this.activeCount - 1);
+      this.completedCount += 1;
+    }
+
+    if (previousTask.isCompleted && !updatedTask.isCompleted) {
+      this.completedCount = Math.max(0, this.completedCount - 1);
+      this.activeCount += 1;
+    }
+
+    if (this.selectedFilter === 'active' && updatedTask.isCompleted) {
+      this.tasks = this.tasks.filter((task) => task.id !== updatedTask.id);
+      return;
+    }
+
+    if (this.selectedFilter === 'completed' && !updatedTask.isCompleted) {
+      this.tasks = this.tasks.filter((task) => task.id !== updatedTask.id);
+      return;
+    }
+
+    this.tasks = this.tasks.map((task) => task.id === updatedTask.id ? updatedTask : task);
+  }
+
+  private newIdempotencyKey(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+      const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+
+    return `${this.randomHex(8)}-${this.randomHex(4)}-4${this.randomHex(3)}-${this.variantHex()}${this.randomHex(3)}-${this.randomHex(12)}`;
+  }
+
+  private toEditableCategory(category: string): TaskCategory {
+    if (isTaskCategory(category)) {
+      return category;
+    }
+
+    return 'other';
+  }
+
+  private randomHex(length: number): string {
+    let buffer = '';
+    while (buffer.length < length) {
+      buffer += Math.floor(Math.random() * 16).toString(16);
+    }
+
+    return buffer.slice(0, length);
+  }
+
+  private variantHex(): string {
+    return ['8', '9', 'a', 'b'][Math.floor(Math.random() * 4)];
   }
 }

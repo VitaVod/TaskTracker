@@ -32,7 +32,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
             description = "Draft story priorities for next sprint",
             dueAtUtc = "2026-04-27T18:00:00Z",
             priority = "Medium",
-            category = "Planning"
+            category = "Work"
         });
 
         var response = await _client.SendAsync(request);
@@ -41,7 +41,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal("Plan sprint backlog", payload.GetProperty("title").GetString());
         Assert.Equal("medium", payload.GetProperty("priority").GetString());
-        Assert.Equal("planning", payload.GetProperty("category").GetString());
+        Assert.Equal("work", payload.GetProperty("category").GetString());
         Assert.False(payload.GetProperty("isCompleted").GetBoolean());
         Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("createdAtUtc").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("updatedAtUtc").GetString()));
@@ -52,7 +52,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.NotNull(persistedTask);
         Assert.Equal(caller.UserId, persistedTask!.UserId);
         Assert.Equal("medium", persistedTask.Priority);
-        Assert.Equal("planning", persistedTask.Category);
+        Assert.Equal("work", persistedTask.Category);
         Assert.False(persistedTask.IsCompleted);
     }
 
@@ -104,7 +104,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
             description = "invalid dueAtUtc type",
             dueAtUtc = "not-a-date",
             priority = "medium",
-            category = "validation"
+            category = "work"
         });
 
         var response = await _client.SendAsync(request);
@@ -158,7 +158,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
           "title": "Ownership test",
           "description": "Attempt to spoof owner",
           "priority": "medium",
-          "category": "security"
+                    "category": "work"
         }
         """;
 
@@ -295,7 +295,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
             description = "Updated description",
             dueAtUtc = "2026-04-28T17:00:00Z",
             priority = "High",
-            category = "Planning"
+            category = "Work"
         });
 
         var response = await _client.SendAsync(request);
@@ -306,7 +306,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal("Updated title", payload.GetProperty("title").GetString());
         Assert.Equal("Updated description", payload.GetProperty("description").GetString());
         Assert.Equal("high", payload.GetProperty("priority").GetString());
-        Assert.Equal("planning", payload.GetProperty("category").GetString());
+        Assert.Equal("work", payload.GetProperty("category").GetString());
 
         var updatedAtUtc = payload.GetProperty("updatedAtUtc").GetDateTime();
         Assert.True(updatedAtUtc >= task.UpdatedAtUtc);
@@ -316,7 +316,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal("Updated title", persistedTask!.Title);
         Assert.Equal("Updated description", persistedTask.Description);
         Assert.Equal("high", persistedTask.Priority);
-        Assert.Equal("planning", persistedTask.Category);
+        Assert.Equal("work", persistedTask.Category);
         Assert.Equal(task.UserId, persistedTask.UserId);
         Assert.False(persistedTask.IsCompleted);
     }
@@ -332,7 +332,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
             description = "no auth",
             dueAtUtc = "2026-04-28T17:00:00Z",
             priority = "medium",
-            category = "planning"
+            category = "work"
         });
 
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -401,7 +401,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
             description = "attempt",
             dueAtUtc = "2026-04-28T17:00:00Z",
             priority = "high",
-            category = "security"
+            category = "work"
         });
 
         var response = await _client.SendAsync(request);
@@ -418,6 +418,187 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.NotNull(persistedTask);
         Assert.Equal("Owner title", persistedTask!.Title);
         Assert.Equal(owner.UserId, persistedTask.UserId);
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_WithOwnedTask_CompletesTaskAndPersistsSingleProgressionEvent()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.owned@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Toggle completion", false, DateTime.UtcNow.AddMinutes(-3));
+
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        request.Content = JsonContent.Create(new
+        {
+            isCompleted = true
+        });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(payload.GetProperty("isCompleted").GetBoolean());
+
+        var updatedAtUtc = payload.GetProperty("updatedAtUtc").GetDateTime();
+        Assert.True(updatedAtUtc >= task.UpdatedAtUtc);
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.True(persistedTask!.IsCompleted);
+
+        var completionEvents = await _factory.CountTaskCompletionEventsAsync(task.Id);
+        var taskCompletedEvents = await _factory.CountTaskCompletedEventsAsync(task.Id);
+        Assert.Equal(1, completionEvents);
+        Assert.Equal(1, taskCompletedEvents);
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_WithDuplicateIdempotencyKey_ReturnsStableStateWithoutDuplicateEvent()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.idempotent@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Idempotency task", false, DateTime.UtcNow.AddMinutes(-3));
+        var idempotencyKey = Guid.NewGuid().ToString();
+
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        firstRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        firstRequest.Headers.Add("Idempotency-Key", idempotencyKey);
+        firstRequest.Content = JsonContent.Create(new { isCompleted = true });
+
+        var firstResponse = await _client.SendAsync(firstRequest);
+        var firstPayload = await firstResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var firstUpdatedAt = firstPayload.GetProperty("updatedAtUtc").GetDateTime();
+
+        using var duplicateRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        duplicateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        duplicateRequest.Headers.Add("Idempotency-Key", idempotencyKey);
+        duplicateRequest.Content = JsonContent.Create(new { isCompleted = false });
+
+        var duplicateResponse = await _client.SendAsync(duplicateRequest);
+        var duplicatePayload = await duplicateResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, duplicateResponse.StatusCode);
+        Assert.True(duplicatePayload.GetProperty("isCompleted").GetBoolean());
+        Assert.Equal(firstUpdatedAt, duplicatePayload.GetProperty("updatedAtUtc").GetDateTime());
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.True(persistedTask!.IsCompleted);
+
+        var completionEvents = await _factory.CountTaskCompletionEventsAsync(task.Id);
+        var taskCompletedEvents = await _factory.CountTaskCompletedEventsAsync(task.Id);
+        Assert.Equal(1, completionEvents);
+        Assert.Equal(1, taskCompletedEvents);
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_WithConcurrentDuplicateIdempotencyKey_ReturnsDeterministicResultWithoutDuplicateEvent()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.idempotent.concurrent@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Concurrent idempotency task", false, DateTime.UtcNow.AddMinutes(-3));
+        var idempotencyKey = Guid.NewGuid().ToString();
+
+        using var requestA = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        requestA.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        requestA.Headers.Add("Idempotency-Key", idempotencyKey);
+        requestA.Content = JsonContent.Create(new { isCompleted = true });
+
+        using var requestB = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        requestB.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        requestB.Headers.Add("Idempotency-Key", idempotencyKey);
+        requestB.Content = JsonContent.Create(new { isCompleted = true });
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+        var payloadA = await responses[0].Content.ReadFromJsonAsync<JsonElement>();
+        var payloadB = await responses[1].Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        Assert.True(payloadA.GetProperty("isCompleted").GetBoolean());
+        Assert.True(payloadB.GetProperty("isCompleted").GetBoolean());
+        Assert.Equal(
+            payloadA.GetProperty("updatedAtUtc").GetDateTime(),
+            payloadB.GetProperty("updatedAtUtc").GetDateTime());
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.True(persistedTask!.IsCompleted);
+
+        var completionEvents = await _factory.CountTaskCompletionEventsAsync(task.Id);
+        var taskCompletedEvents = await _factory.CountTaskCompletedEventsAsync(task.Id);
+        Assert.Equal(1, completionEvents);
+        Assert.Equal(1, taskCompletedEvents);
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_WithInvalidPayload_ReturnsValidationProblemDetails()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.invalid@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Invalid completion request", false, DateTime.UtcNow.AddMinutes(-3));
+
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Headers.Add("Idempotency-Key", "invalid-guid");
+        request.Content = JsonContent.Create(new { isCompleted = (bool?)null });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/validation", payload.GetProperty("type").GetString());
+        Assert.Equal("validation.request.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+
+        var errors = payload.GetProperty("errors");
+        Assert.True(errors.TryGetProperty("isCompleted", out _));
+        Assert.True(errors.TryGetProperty("idempotencyKey", out _));
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_WithoutAuthentication_ReturnsUnauthorizedProblemDetails()
+    {
+        var taskId = Guid.NewGuid();
+
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{taskId}/completion");
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        request.Content = JsonContent.Create(new { isCompleted = true });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/authentication-failed", payload.GetProperty("type").GetString());
+        Assert.Equal("Authentication Failed", payload.GetProperty("title").GetString());
+        Assert.Equal(401, payload.GetProperty("status").GetInt32());
+        Assert.Equal("auth.session.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_WithNonOwnedTask_ReturnsForbiddenAndDoesNotMutateTask()
+    {
+        var owner = await RegisterAndLoginWithUserAsync("tasks.completion.owner@example.com");
+        var attacker = await RegisterAndLoginWithUserAsync("tasks.completion.attacker@example.com");
+        var task = await SeedTaskAsync(owner.UserId, "Owner completion", false, DateTime.UtcNow.AddMinutes(-3));
+
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", attacker.Tokens.AccessToken);
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        request.Content = JsonContent.Create(new { isCompleted = true });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/forbidden", payload.GetProperty("type").GetString());
+        Assert.Equal("auth.forbidden", payload.GetProperty("code").GetString());
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.False(persistedTask!.IsCompleted);
+
+        var completionEvents = await _factory.CountTaskCompletionEventsAsync(task.Id);
+        Assert.Equal(0, completionEvents);
     }
 
     private async Task<(Guid UserId, LoginResponse Tokens)> RegisterAndLoginWithUserAsync(string email)
@@ -442,7 +623,7 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
             Description = $"{title} description",
             DueAtUtc = null,
             Priority = "medium",
-            Category = "planning",
+            Category = "work",
             IsCompleted = isCompleted,
             CreatedAtUtc = now,
             UpdatedAtUtc = updatedAtUtc
