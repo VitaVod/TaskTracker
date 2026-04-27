@@ -1,0 +1,24 @@
+.loading-overlay {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: rgba(7, 16, 30, 0.42);
+	backdrop-filter: blur(1px);
+	z-index: 2000;
+}
+
+.spinner {
+	width: 3rem;
+	height: 3rem;
+	border: 0.3rem solid rgba(255, 255, 255, 0.3);
+	border-top-color: #8ee7ff;
+	border-radius: 50%;
+	animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}

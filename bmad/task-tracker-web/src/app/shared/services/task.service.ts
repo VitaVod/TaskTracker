@@ -36,6 +36,12 @@ export class TaskService {
       .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));
   }
 
+  deleteTask(taskId: string): Observable<void> {
+    return this.httpClient
+      .delete<void>(`${this.endpoint}/${taskId}`)
+      .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));
+  }
+
   toggleTaskCompletion(taskId: string, payload: ToggleTaskCompletionRequest, idempotencyKey: string): Observable<TaskResponse> {
     return this.httpClient
       .patch<TaskResponse>(

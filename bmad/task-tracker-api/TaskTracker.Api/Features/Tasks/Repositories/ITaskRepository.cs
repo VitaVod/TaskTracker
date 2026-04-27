@@ -18,12 +18,21 @@ public enum TaskCompletionToggleStatus
     IdempotentReplay
 }
 
+public enum TaskDeleteStatus
+{
+    Deleted,
+    Forbidden,
+    IdempotentNotFound
+}
+
 public sealed record TaskUpdateResult(TaskUpdateStatus Status, TaskItem? Task);
 
 public sealed record TaskCompletionToggleResult(
     TaskCompletionToggleStatus Status,
     TaskItem? Task,
     bool CompletionEventRecorded);
+
+public sealed record TaskDeleteResult(TaskDeleteStatus Status);
 
 public interface ITaskRepository
 {
@@ -50,5 +59,10 @@ public interface ITaskRepository
         bool isCompleted,
         string idempotencyKey,
         DateTime updatedAtUtc,
+        CancellationToken cancellationToken);
+
+    Task<TaskDeleteResult> DeleteOwnedAsync(
+        Guid userId,
+        Guid taskId,
         CancellationToken cancellationToken);
 }

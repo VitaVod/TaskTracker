@@ -178,6 +178,27 @@ public class TaskRepository(TaskTrackerDbContext dbContext) : ITaskRepository
         return new TaskCompletionToggleResult(TaskCompletionToggleStatus.Updated, persistedTask, completionEventRecorded);
     }
 
+    public async Task<TaskDeleteResult> DeleteOwnedAsync(
+        Guid userId,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        var task = await dbContext.Tasks.FirstOrDefaultAsync(existingTask => existingTask.Id == taskId, cancellationToken);
+        if (task is null)
+        {
+            return new TaskDeleteResult(TaskDeleteStatus.IdempotentNotFound);
+        }
+
+        if (task.UserId != userId)
+        {
+            return new TaskDeleteResult(TaskDeleteStatus.Forbidden);
+        }
+
+        dbContext.Tasks.Remove(task);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new TaskDeleteResult(TaskDeleteStatus.Deleted);
+    }
+
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)
     {
         if (exception.InnerException is SqlException sqlException)

@@ -1,0 +1,11 @@
+# Node
+**/node_modules/
+**/dist/
+
+# .NET
+**/bin/
+**/obj/
+
+# IDE
+.vs/
+.vscode/*.log

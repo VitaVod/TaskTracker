@@ -1,0 +1,101 @@
+﻿# generated: 2026-04-24T14:14:44+03:00
+# last_updated: 2026-04-24T14:14:44+03:00
+# project: bmad
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ==============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-04-24T14:14:44+03:00
+last_updated: 2026-04-27T21:05:00+03:00
+project: bmad
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: done
+  1-1-initialize-solution-from-selected-starter-template: done
+  1-2-implement-user-registration-and-login: done
+  1-3-implement-secure-session-lifecycle-and-logout: done
+  1-4-build-profile-and-account-settings-management: done
+  1-5-implement-role-policies-and-ownership-authorization-baseline: done
+  1-6-implement-password-recovery-and-critical-transactional-email: done
+  epic-1-retrospective: done
+
+  epic-2: in-progress
+  2-1-create-task-domain-and-api-contracts: done
+  2-2-build-task-list-views-for-active-and-completed-items: done
+  2-3-implement-task-update-and-organizational-attributes: done
+  2-4-implement-task-completion-toggle-with-deterministic-state: done
+  2-5-implement-task-deletion-and-safe-ux-confirmation: done
+  2-6-build-task-ui-states-for-empty-loading-and-error-conditions: done
+  epic-2-retrospective: done
+
+  epic-3: in-progress
+  3-1-build-xp-ledger-and-idempotent-completion-processing: ready-for-dev
+  3-2-implement-streak-rule-engine-with-timezone-policy: backlog
+  3-3-expose-progress-apis-for-xp-streak-and-trend-snapshots: backlog
+  3-4-build-dashboard-progress-components-and-feedback-ui: backlog
+  3-5-implement-momentum-summary-and-historical-progress-view: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-implement-streak-and-completed-task-leaderboard-read-models: backlog
+  4-2-implement-privacy-safe-public-identity-and-participation-controls: backlog
+  4-3-build-global-statistics-endpoints-and-ui-panels: backlog
+  4-4-add-cache-and-invalidation-strategy-for-shared-views: backlog
+  4-5-build-leaderboard-ux-components-and-responsive-behaviors: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-implement-notification-preferences-domain-and-api: backlog
+  5-2-implement-reminder-email-pipeline-for-pending-tasks: backlog
+  5-3-build-missed-day-recovery-experience-and-guidance: backlog
+  5-4-implement-progress-explanation-messages-for-outcome-transparency: backlog
+  5-5-integrate-transactional-notification-flows-with-account-events: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-build-admin-suspicious-activity-review-workspace: backlog
+  6-2-implement-moderation-actions-with-safety-guards: backlog
+  6-3-build-support-diagnostic-view-for-user-progress-disputes: backlog
+  6-4-implement-event-timeline-and-correlation-based-troubleshooting: backlog
+  6-5-implement-immutable-audit-logging-for-privileged-actions: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-implement-integration-authentication-and-scoped-credentials: backlog
+  7-2-implement-task-create-sync-endpoint-for-integrations: backlog
+  7-3-implement-idempotent-retry-handling-for-integration-events: backlog
+  7-4-add-integration-observability-and-failure-recovery: backlog
+  epic-7-retrospective: optional
+

@@ -601,6 +601,114 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal(0, completionEvents);
     }
 
+    [Fact]
+    public async Task Delete_WithOwnedTask_ReturnsNoContentAndRemovesTaskFromOwnedLists()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.delete.owned@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Delete owned task", false, DateTime.UtcNow.AddMinutes(-2));
+
+        using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/tasks/{task.Id}");
+        deleteRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var deleteResponse = await _client.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.Null(persistedTask);
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/tasks?state=all");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var listResponse = await _client.SendAsync(listRequest);
+        var listPayload = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        Assert.Empty(listPayload.GetProperty("items").EnumerateArray());
+        Assert.Equal(0, listPayload.GetProperty("summary").GetProperty("activeCount").GetInt32());
+        Assert.Equal(0, listPayload.GetProperty("summary").GetProperty("completedCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Delete_WhenRepeated_ReturnsNoContentDeterministically()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.delete.idempotent@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Delete idempotent task", false, DateTime.UtcNow.AddMinutes(-2));
+
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/tasks/{task.Id}");
+        firstRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/tasks/{task.Id}");
+        secondRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var firstResponse = await _client.SendAsync(firstRequest);
+        var secondResponse = await _client.SendAsync(secondRequest);
+
+        Assert.Equal(HttpStatusCode.NoContent, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, secondResponse.StatusCode);
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.Null(persistedTask);
+    }
+
+    [Fact]
+    public async Task Delete_WithMalformedTaskId_ReturnsValidationProblemDetails()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.delete.invalid-id@example.com");
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, "/api/v1/tasks/not-a-guid");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/validation", payload.GetProperty("type").GetString());
+        Assert.Equal("Validation failed", payload.GetProperty("title").GetString());
+        Assert.Equal(400, payload.GetProperty("status").GetInt32());
+        Assert.Equal("validation.request.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+        Assert.True(payload.GetProperty("errors").TryGetProperty("taskId", out _));
+    }
+
+    [Fact]
+    public async Task Delete_WithoutAuthentication_ReturnsUnauthorizedProblemDetails()
+    {
+        var response = await _client.DeleteAsync($"/api/v1/tasks/{Guid.NewGuid()}");
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/authentication-failed", payload.GetProperty("type").GetString());
+        Assert.Equal("Authentication Failed", payload.GetProperty("title").GetString());
+        Assert.Equal(401, payload.GetProperty("status").GetInt32());
+        Assert.Equal("auth.session.invalid", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+    }
+
+    [Fact]
+    public async Task Delete_WithNonOwnedTask_ReturnsForbiddenAndDoesNotDeleteOwnerTask()
+    {
+        var owner = await RegisterAndLoginWithUserAsync("tasks.delete.owner@example.com");
+        var attacker = await RegisterAndLoginWithUserAsync("tasks.delete.attacker@example.com");
+        var task = await SeedTaskAsync(owner.UserId, "Owner delete protection", false, DateTime.UtcNow.AddMinutes(-2));
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/tasks/{task.Id}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", attacker.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/forbidden", payload.GetProperty("type").GetString());
+        Assert.Equal("Forbidden", payload.GetProperty("title").GetString());
+        Assert.Equal(403, payload.GetProperty("status").GetInt32());
+        Assert.Equal("auth.forbidden", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.Equal(owner.UserId, persistedTask!.UserId);
+    }
+
     private async Task<(Guid UserId, LoginResponse Tokens)> RegisterAndLoginWithUserAsync(string email)
     {
         var registerResponse = await _client.PostAsJsonAsync("/api/v1/auth/register", new RegisterRequest(email, "StrongPass123!"));

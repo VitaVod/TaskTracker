@@ -234,6 +234,44 @@ public class TasksController(
         return Ok(ToResponse(toggleResult.Task!));
     }
 
+    [HttpDelete("{taskId}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Delete([FromRoute] string taskId, CancellationToken cancellationToken)
+    {
+        if (!TryResolveCurrentUserId(out var userId))
+        {
+            return UnauthorizedProblem("tasks.identity.invalid");
+        }
+
+        if (!Guid.TryParse(taskId, out var parsedTaskId))
+        {
+            var routeErrors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["taskId"] = ["The taskId route value must be a valid GUID."]
+            };
+
+            return ValidationProblem("validation.request.invalid", routeErrors);
+        }
+
+        var deleteResult = await taskRepository.DeleteOwnedAsync(userId, parsedTaskId, cancellationToken);
+        if (deleteResult.Status == TaskDeleteStatus.Forbidden)
+        {
+            return ForbiddenProblem("auth.forbidden");
+        }
+
+        logger.LogInformation(
+            "Task {TaskId} delete processed for user {UserId} with status {DeleteStatus}. TraceId: {TraceId}",
+            parsedTaskId,
+            userId,
+            deleteResult.Status,
+            HttpContext.TraceIdentifier);
+
+        return NoContent();
+    }
+
     private bool TryResolveCurrentUserId(out Guid userId)
     {
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");

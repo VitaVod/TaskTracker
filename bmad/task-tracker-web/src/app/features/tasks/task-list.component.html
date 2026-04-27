@@ -4,7 +4,10 @@
       <p class="eyebrow">TaskTracker / Tasks</p>
       <h1>Task list</h1>
       <p class="subtitle">Use the filters to focus on active work or review completed items.</p>
-      <a routerLink="/tasks/new" class="create-link">Create a task</a>
+      <div class="header-actions">
+        <a routerLink="/dashboard" class="back-link">Back to dashboard</a>
+        <a routerLink="/tasks/new" class="create-link">Create a task</a>
+      </div>
     </header>
 
     <nav class="filter-bar" aria-label="Task state filters">
@@ -28,11 +31,37 @@
     </p>
 
     <p class="sr-only" aria-live="polite">{{ liveMessage }}</p>
+    <p class="sr-only" aria-live="assertive">{{ isUiLoadError() ? currentLoadErrorMessage() : '' }}</p>
 
-    @if (isLoading) {
-      <p class="status">Loading tasks...</p>
-    } @else if (errorMessage) {
-      <p class="status error">{{ errorMessage }}</p>
+    @if (isUiLoading()) {
+      <section class="loading-state" aria-label="Loading tasks" aria-busy="true">
+        <p class="status">Loading tasks...</p>
+        <div class="loading-skeleton" aria-hidden="true"></div>
+        <div class="loading-skeleton" aria-hidden="true"></div>
+        <div class="loading-skeleton" aria-hidden="true"></div>
+      </section>
+    } @else if (isUiLoadError()) {
+      <section class="error-state" role="alert" aria-live="assertive">
+        <p class="status error">{{ currentLoadErrorMessage() }}</p>
+        @if (currentLoadErrorSupportText()) {
+          <p class="error-support">{{ currentLoadErrorSupportText() }}</p>
+        }
+        <div class="state-actions">
+          <button type="button" class="save-button" (click)="retryLoad()">Retry</button>
+          <a routerLink="/tasks/new" class="create-link">Create a task</a>
+        </div>
+      </section>
+    } @else if (isUiEmpty()) {
+      <section class="empty-state" aria-live="polite">
+        <h2>{{ currentEmptyHeading() }}</h2>
+        <p class="status">{{ currentEmptyGuidance() }}</p>
+        <div class="state-actions">
+          <a routerLink="/tasks/new" class="create-primary">Create a task</a>
+          @if (selectedFilter !== 'all') {
+            <button type="button" class="cancel-button" (click)="resetFilterToAll()">View all tasks</button>
+          }
+        </div>
+      </section>
     } @else {
       @if (selectedFilter === 'all') {
         <section class="segment" aria-label="Active tasks segment">
@@ -56,6 +85,14 @@
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
                         <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                        <button
+                          type="button"
+                          class="delete-button"
+                          [disabled]="isDeleteInFlight(task.id)"
+                          [attr.aria-label]="'Delete task ' + task.title"
+                          (click)="requestDelete(task, $event)">
+                          {{ isDeleteInFlight(task.id) ? 'Deleting...' : 'Delete' }}
+                        </button>
                       </div>
                     </div>
 
@@ -79,7 +116,15 @@
                         <div class="row">
                           <div>
                             <label for="edit-dueAtUtc">Due date (UTC)</label>
-                            <input id="edit-dueAtUtc" type="datetime-local" formControlName="dueAtUtc" />
+                            <input
+                              id="edit-dueAtUtc"
+                              type="datetime-local"
+                              formControlName="dueAtUtc"
+                              [attr.min]="minDueDateTimeLocal"
+                              (change)="closeDatePicker($event)" />
+                            @if (editForm.controls.dueAtUtc.hasError('pastDueDate') && editForm.controls.dueAtUtc.touched) {
+                              <p class="field-error">Due date cannot be in the past.</p>
+                            }
                             @if (fieldError('dueAtUtc')) {
                               <p class="field-error">{{ fieldError('dueAtUtc') }}</p>
                             }
@@ -112,7 +157,13 @@
                         }
 
                         @if (saveErrorMessage) {
-                          <p class="api-error">{{ saveErrorMessage }}</p>
+                          <div class="api-error-group" role="alert">
+                            <p class="api-error">{{ saveErrorMessage }}</p>
+                            @if (saveErrorSupportText()) {
+                              <p class="error-support">{{ saveErrorSupportText() }}</p>
+                            }
+                            <button type="button" class="dismiss-button" (click)="dismissSaveError()">Dismiss</button>
+                          </div>
                         }
 
                         <div class="edit-actions">
@@ -126,7 +177,16 @@
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
                       <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
                       @if (toggleError(task.id)) {
-                        <p class="api-error">{{ toggleError(task.id) }}</p>
+                        <div class="api-error-group" role="alert">
+                          <p class="api-error">{{ toggleError(task.id) }}</p>
+                          @if (toggleErrorSupportText(task.id)) {
+                            <p class="error-support">{{ toggleErrorSupportText(task.id) }}</p>
+                          }
+                          <div class="error-actions">
+                            <button type="button" class="save-button" (click)="retryToggle(task)">Retry</button>
+                            <button type="button" class="dismiss-button" (click)="dismissToggleError(task.id)">Dismiss</button>
+                          </div>
+                        </div>
                       }
                     }
                   </article>
@@ -157,6 +217,14 @@
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
                         <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                        <button
+                          type="button"
+                          class="delete-button"
+                          [disabled]="isDeleteInFlight(task.id)"
+                          [attr.aria-label]="'Delete task ' + task.title"
+                          (click)="requestDelete(task, $event)">
+                          {{ isDeleteInFlight(task.id) ? 'Deleting...' : 'Delete' }}
+                        </button>
                       </div>
                     </div>
 
@@ -180,7 +248,15 @@
                         <div class="row">
                           <div>
                             <label for="edit-dueAtUtc">Due date (UTC)</label>
-                            <input id="edit-dueAtUtc" type="datetime-local" formControlName="dueAtUtc" />
+                            <input
+                              id="edit-dueAtUtc"
+                              type="datetime-local"
+                              formControlName="dueAtUtc"
+                              [attr.min]="minDueDateTimeLocal"
+                              (change)="closeDatePicker($event)" />
+                            @if (editForm.controls.dueAtUtc.hasError('pastDueDate') && editForm.controls.dueAtUtc.touched) {
+                              <p class="field-error">Due date cannot be in the past.</p>
+                            }
                             @if (fieldError('dueAtUtc')) {
                               <p class="field-error">{{ fieldError('dueAtUtc') }}</p>
                             }
@@ -213,7 +289,13 @@
                         }
 
                         @if (saveErrorMessage) {
-                          <p class="api-error">{{ saveErrorMessage }}</p>
+                          <div class="api-error-group" role="alert">
+                            <p class="api-error">{{ saveErrorMessage }}</p>
+                            @if (saveErrorSupportText()) {
+                              <p class="error-support">{{ saveErrorSupportText() }}</p>
+                            }
+                            <button type="button" class="dismiss-button" (click)="dismissSaveError()">Dismiss</button>
+                          </div>
                         }
 
                         <div class="edit-actions">
@@ -227,7 +309,16 @@
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
                       <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
                       @if (toggleError(task.id)) {
-                        <p class="api-error">{{ toggleError(task.id) }}</p>
+                        <div class="api-error-group" role="alert">
+                          <p class="api-error">{{ toggleError(task.id) }}</p>
+                          @if (toggleErrorSupportText(task.id)) {
+                            <p class="error-support">{{ toggleErrorSupportText(task.id) }}</p>
+                          }
+                          <div class="error-actions">
+                            <button type="button" class="save-button" (click)="retryToggle(task)">Retry</button>
+                            <button type="button" class="dismiss-button" (click)="dismissToggleError(task.id)">Dismiss</button>
+                          </div>
+                        </div>
                       }
                     }
                   </article>
@@ -259,6 +350,14 @@
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
                         <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                        <button
+                          type="button"
+                          class="delete-button"
+                          [disabled]="isDeleteInFlight(task.id)"
+                          [attr.aria-label]="'Delete task ' + task.title"
+                          (click)="requestDelete(task, $event)">
+                          {{ isDeleteInFlight(task.id) ? 'Deleting...' : 'Delete' }}
+                        </button>
                       </div>
                     </div>
 
@@ -282,7 +381,15 @@
                         <div class="row">
                           <div>
                             <label for="edit-dueAtUtc">Due date (UTC)</label>
-                            <input id="edit-dueAtUtc" type="datetime-local" formControlName="dueAtUtc" />
+                            <input
+                              id="edit-dueAtUtc"
+                              type="datetime-local"
+                              formControlName="dueAtUtc"
+                              [attr.min]="minDueDateTimeLocal"
+                              (change)="closeDatePicker($event)" />
+                            @if (editForm.controls.dueAtUtc.hasError('pastDueDate') && editForm.controls.dueAtUtc.touched) {
+                              <p class="field-error">Due date cannot be in the past.</p>
+                            }
                             @if (fieldError('dueAtUtc')) {
                               <p class="field-error">{{ fieldError('dueAtUtc') }}</p>
                             }
@@ -315,7 +422,13 @@
                         }
 
                         @if (saveErrorMessage) {
-                          <p class="api-error">{{ saveErrorMessage }}</p>
+                          <div class="api-error-group" role="alert">
+                            <p class="api-error">{{ saveErrorMessage }}</p>
+                            @if (saveErrorSupportText()) {
+                              <p class="error-support">{{ saveErrorSupportText() }}</p>
+                            }
+                            <button type="button" class="dismiss-button" (click)="dismissSaveError()">Dismiss</button>
+                          </div>
                         }
 
                         <div class="edit-actions">
@@ -329,7 +442,16 @@
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
                       <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
                       @if (toggleError(task.id)) {
-                        <p class="api-error">{{ toggleError(task.id) }}</p>
+                        <div class="api-error-group" role="alert">
+                          <p class="api-error">{{ toggleError(task.id) }}</p>
+                          @if (toggleErrorSupportText(task.id)) {
+                            <p class="error-support">{{ toggleErrorSupportText(task.id) }}</p>
+                          }
+                          <div class="error-actions">
+                            <button type="button" class="save-button" (click)="retryToggle(task)">Retry</button>
+                            <button type="button" class="dismiss-button" (click)="dismissToggleError(task.id)">Dismiss</button>
+                          </div>
+                        </div>
                       }
                     }
                   </article>
@@ -341,4 +463,52 @@
       }
     }
   </section>
+
+  @if (pendingDeleteTask) {
+    <div class="delete-dialog-backdrop" (click)="cancelDelete()">
+      <section
+        class="delete-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+        (click)="$event.stopPropagation()"
+        (keydown)="closeDeleteOnEscape($event)">
+        <h2 id="delete-dialog-title">Delete task?</h2>
+        <p id="delete-dialog-description">
+          This action will permanently remove
+          <strong>{{ pendingDeleteTask.title }}</strong>
+          from your task list.
+        </p>
+
+        @if (deleteErrorMessage) {
+          <div class="api-error-group" role="alert">
+            <p class="api-error">{{ deleteErrorMessage }}</p>
+            @if (deleteErrorSupportText()) {
+              <p class="error-support">{{ deleteErrorSupportText() }}</p>
+            }
+            <button type="button" class="dismiss-button" [disabled]="isDeleting" (click)="dismissDeleteError()">Dismiss</button>
+          </div>
+        }
+
+        <div class="delete-dialog-actions">
+          <button
+            #deleteConfirmButton
+            type="button"
+            class="delete-confirm-button"
+            [disabled]="isDeleting"
+            (click)="confirmDelete()">
+            {{ isDeleting ? 'Deleting...' : 'Yes, delete task' }}
+          </button>
+          <button
+            type="button"
+            class="cancel-button"
+            [disabled]="isDeleting"
+            (click)="cancelDelete()">
+            Cancel
+          </button>
+        </div>
+      </section>
+    </div>
+  }
 </main>

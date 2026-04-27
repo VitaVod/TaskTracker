@@ -208,4 +208,18 @@ describe('TaskService', () => {
 
     expect(responseBody).toBeTruthy();
   });
+
+  it('deletes task resource by id', () => {
+    let completed = false;
+    service.deleteTask('7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12').subscribe(() => {
+      completed = true;
+    });
+
+    const request = httpMock.expectOne('/api/v1/tasks/7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12');
+    expect(request.request.method).toBe('DELETE');
+
+    request.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(completed).toBeTrue();
+  });
 });

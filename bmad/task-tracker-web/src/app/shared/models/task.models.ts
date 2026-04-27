@@ -90,6 +90,18 @@ export interface TaskListResponse {
   summary: TaskListSummary;
 }
 
+export type TaskUiState =
+  | { kind: 'loading' }
+  | { kind: 'empty'; filter: TaskListState }
+  | { kind: 'ready'; tasks: TaskResponse[] }
+  | {
+    kind: 'error';
+    scope: 'load' | 'mutation';
+    message: string;
+    code?: string;
+    traceId?: string;
+  };
+
 export interface TaskProblemDetails {
   type?: string;
   title?: string;

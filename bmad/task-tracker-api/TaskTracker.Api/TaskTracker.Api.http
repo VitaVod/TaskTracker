@@ -1,0 +1,21 @@
+@TaskTracker.Api_HostAddress = http://localhost:5033
+
+POST {{TaskTracker.Api_HostAddress}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+	"email": "user@example.com",
+	"password": "SecurePass123!"
+}
+
+###
+
+POST {{TaskTracker.Api_HostAddress}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+	"email": "user@example.com",
+	"password": "SecurePass123!"
+}
+
+###

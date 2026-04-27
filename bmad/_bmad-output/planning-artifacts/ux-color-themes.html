@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Tracker - UX Color Themes</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --surface: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #d1d5db;
+      --primary: #1d4ed8;
+      --accent: #f59e0b;
+      --success: #16a34a;
+      --error: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(160deg, #eef4ff 0%, #f9fafb 60%, #fff7ed 100%);
+      color: var(--text);
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; }
+    p { color: var(--muted); margin-top: 0; }
+    .themes { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
+    }
+    .banner { padding: 14px 16px; color: #fff; font-weight: 700; }
+    .swatches { padding: 14px; display: grid; gap: 10px; }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .chip { width: 34px; height: 34px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.08); }
+    .label { font-size: 14px; }
+    .sample { margin: 0 14px 14px; padding: 14px; border-radius: 10px; border: 1px solid var(--border); }
+    .btn {
+      border: 0; border-radius: 8px; padding: 9px 12px; color: #fff; cursor: pointer;
+      font-weight: 600; margin-right: 8px;
+    }
+    .btn.secondary { color: var(--text); background: #e5e7eb; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Task Tracker Color Theme Visualizer</h1>
+    <p>Three theme options for the UX foundation. Recommended direction: Balanced Modern Productivity.</p>
+    <div class="themes">
+      <section class="card">
+        <div class="banner" style="background:#1d4ed8">Balanced Modern Productivity (Recommended)</div>
+        <div class="swatches">
+          <div class="row"><div class="chip" style="background:#1d4ed8"></div><div class="label">Primary #1D4ED8</div></div>
+          <div class="row"><div class="chip" style="background:#f59e0b"></div><div class="label">Accent #F59E0B</div></div>
+          <div class="row"><div class="chip" style="background:#16a34a"></div><div class="label">Success #16A34A</div></div>
+          <div class="row"><div class="chip" style="background:#dc2626"></div><div class="label">Error #DC2626</div></div>
+        </div>
+        <div class="sample">
+          <button class="btn" style="background:#1d4ed8">Complete Task</button>
+          <button class="btn secondary">Edit</button>
+        </div>
+      </section>
+      <section class="card">
+        <div class="banner" style="background:#7c3aed">Playful Gamified</div>
+        <div class="swatches">
+          <div class="row"><div class="chip" style="background:#7c3aed"></div><div class="label">Primary #7C3AED</div></div>
+          <div class="row"><div class="chip" style="background:#22c55e"></div><div class="label">Accent #22C55E</div></div>
+          <div class="row"><div class="chip" style="background:#f97316"></div><div class="label">Reward #F97316</div></div>
+          <div class="row"><div class="chip" style="background:#ef4444"></div><div class="label">Error #EF4444</div></div>
+        </div>
+        <div class="sample">
+          <button class="btn" style="background:#7c3aed">Gain XP</button>
+          <button class="btn secondary">Open Streak</button>
+        </div>
+      </section>
+      <section class="card">
+        <div class="banner" style="background:#0f766e">Minimal Utility</div>
+        <div class="swatches">
+          <div class="row"><div class="chip" style="background:#0f766e"></div><div class="label">Primary #0F766E</div></div>
+          <div class="row"><div class="chip" style="background:#64748b"></div><div class="label">Neutral #64748B</div></div>
+          <div class="row"><div class="chip" style="background:#15803d"></div><div class="label">Success #15803D</div></div>
+          <div class="row"><div class="chip" style="background:#b91c1c"></div><div class="label">Error #B91C1C</div></div>
+        </div>
+        <div class="sample">
+          <button class="btn" style="background:#0f766e">Save Task</button>
+          <button class="btn secondary">Cancel</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

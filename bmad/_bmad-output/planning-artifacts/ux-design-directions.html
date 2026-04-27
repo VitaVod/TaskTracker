@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Tracker - UX Design Directions</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 6px; }
+    p { margin-top: 0; color: #4b5563; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .direction {
+      background: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+    }
+    .head { padding: 12px 14px; color: #fff; font-weight: 700; }
+    .body { padding: 14px; }
+    .mock {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .top { padding: 10px; font-size: 13px; color: #fff; }
+    .content { padding: 10px; background: #fff; }
+    .task { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+    .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; }
+    .meta { font-size: 13px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Task Tracker Design Direction Mockups</h1>
+    <p>Direction chosen in spec: Balanced modern productivity with motivational accents.</p>
+    <div class="grid">
+      <section class="direction">
+        <div class="head" style="background:#1d4ed8">Direction A: Balanced Modern (Chosen)</div>
+        <div class="body">
+          <div class="mock">
+            <div class="top" style="background:#1d4ed8">Today · Streak 4 · XP +120</div>
+            <div class="content">
+              <div class="task"><span>Finish API endpoint tests</span><span class="badge" style="background:#16a34a">Done</span></div>
+              <div class="task"><span>Draft dashboard card</span><span class="badge" style="background:#f59e0b">Next</span></div>
+              <div class="task"><span>Review leaderboard cache</span><span class="badge" style="background:#6b7280">Later</span></div>
+            </div>
+          </div>
+          <div class="meta">Best for broad audiences: clean structure plus visible motivation.</div>
+        </div>
+      </section>
+      <section class="direction">
+        <div class="head" style="background:#7c3aed">Direction B: Playful Gamified</div>
+        <div class="body">
+          <div class="mock">
+            <div class="top" style="background:#7c3aed">Quest Board · Combo x3</div>
+            <div class="content">
+              <div class="task"><span>Daily Task Chain</span><span class="badge" style="background:#22c55e">+40 XP</span></div>
+              <div class="task"><span>Weekly Challenge</span><span class="badge" style="background:#f97316">Bonus</span></div>
+              <div class="task"><span>Friends Rank</span><span class="badge" style="background:#a855f7">#12</span></div>
+            </div>
+          </div>
+          <div class="meta">High engagement style with stronger game metaphors and higher visual energy.</div>
+        </div>
+      </section>
+      <section class="direction">
+        <div class="head" style="background:#0f766e">Direction C: Minimal Utility</div>
+        <div class="body">
+          <div class="mock">
+            <div class="top" style="background:#0f766e">Tasks · Quiet Mode</div>
+            <div class="content">
+              <div class="task"><span>Task list by priority</span><span class="badge" style="background:#0f766e">P1</span></div>
+              <div class="task"><span>Compact calendar strip</span><span class="badge" style="background:#64748b">Info</span></div>
+              <div class="task"><span>Muted progress area</span><span class="badge" style="background:#15803d">Stable</span></div>
+            </div>
+          </div>
+          <div class="meta">Focused and low-noise for users preferring pure utility over reward prominence.</div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

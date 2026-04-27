@@ -1,0 +1,118 @@
+.account-page {
+  min-height: 100vh;
+  padding: 1.5rem;
+  display: grid;
+  place-items: center;
+}
+
+.account-shell {
+  width: min(100%, 64rem);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  background: linear-gradient(145deg, rgba(8, 28, 36, 0.92), rgba(28, 34, 58, 0.92));
+  border: 1px solid rgba(250, 214, 138, 0.28);
+  box-shadow: 0 1.5rem 3.25rem rgba(0, 0, 0, 0.36);
+}
+
+.account-header h1 {
+  margin: 0.25rem 0;
+}
+
+.account-header p {
+  margin: 0;
+  color: #d8e1f7;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: #fad68a;
+}
+
+.back-link {
+  display: inline-block;
+  margin-top: 0.8rem;
+  color: #9cf7dc;
+}
+
+.grid {
+  margin-top: 1.4rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel {
+  border-radius: 0.9rem;
+  border: 1px solid rgba(156, 247, 220, 0.25);
+  padding: 1rem;
+  background: rgba(5, 17, 30, 0.8);
+}
+
+form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+label {
+  font-size: 0.9rem;
+}
+
+input {
+  width: 100%;
+  padding: 0.72rem 0.82rem;
+  border-radius: 0.6rem;
+  border: 1px solid #45718d;
+  background: #0f2538;
+  color: #eef7ff;
+}
+
+input:focus-visible,
+button:focus-visible,
+.back-link:focus-visible {
+  outline: 2px solid #fad68a;
+  outline-offset: 2px;
+}
+
+button {
+  margin-top: 0.6rem;
+  border: 0;
+  border-radius: 0.6rem;
+  padding: 0.78rem 0.95rem;
+  color: #06233a;
+  font-weight: 700;
+  background: linear-gradient(120deg, #9cf7dc, #fad68a);
+}
+
+button:disabled {
+  opacity: 0.65;
+}
+
+.loading,
+.field-error,
+.api-error,
+.success {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.field-error,
+.api-error {
+  color: #ffcfcf;
+}
+
+.success {
+  color: #9cf7dc;
+}
+
+@media (max-width: 768px) {
+  .account-shell {
+    padding: 1rem;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

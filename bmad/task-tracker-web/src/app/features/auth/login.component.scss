@@ -1,0 +1,91 @@
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  width: min(100%, 28rem);
+  padding: 2rem;
+  border-radius: 1rem;
+  background: rgba(12, 22, 38, 0.82);
+  border: 1px solid rgba(127, 208, 255, 0.35);
+  box-shadow: 0 1.25rem 2.5rem rgba(0, 16, 31, 0.45);
+  animation: rise 0.45s ease;
+}
+
+h1 {
+  margin: 0.25rem 0;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.75rem;
+  color: #7fd0ff;
+}
+
+.subtitle {
+  margin: 0 0 1.5rem;
+  color: #c2d8e7;
+}
+
+form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+label {
+  font-size: 0.88rem;
+}
+
+input {
+  width: 100%;
+  border-radius: 0.65rem;
+  border: 1px solid #355d79;
+  background: #0f1d31;
+  color: #ecf6ff;
+  padding: 0.75rem 0.85rem;
+}
+
+button {
+  margin-top: 0.8rem;
+  border: 0;
+  border-radius: 0.65rem;
+  padding: 0.85rem;
+  color: #00151f;
+  font-weight: 700;
+  background: linear-gradient(120deg, #63e6f8, #9bf6bd);
+}
+
+button:disabled {
+  opacity: 0.6;
+}
+
+.field-error,
+.api-error {
+  margin: 0;
+  color: #ffd0d0;
+  font-size: 0.82rem;
+}
+
+.switch-link {
+  margin-top: 1rem;
+}
+
+a {
+  color: #9bf6bd;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

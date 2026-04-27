@@ -27,8 +27,70 @@
   color: #c2d8e7;
 }
 
+.header-actions {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.back-link {
+  color: #8ee7ff;
+}
+
 .create-link {
   color: #9bf6bd;
+}
+
+.create-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.6rem;
+  border: 1px solid #7fd0ff;
+  background: linear-gradient(120deg, rgba(99, 230, 248, 0.3), rgba(155, 246, 189, 0.26));
+  color: #ecf6ff;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 0.45rem 0.85rem;
+}
+
+.loading-state,
+.empty-state,
+.error-state {
+  margin-top: 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid #355d79;
+  background: #0f1d31;
+  padding: 0.9rem;
+}
+
+.state-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.loading-skeleton {
+  margin-top: 0.55rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(72, 110, 137, 0.36), rgba(111, 165, 198, 0.6), rgba(72, 110, 137, 0.36));
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.2s ease-in-out infinite;
+}
+
+.loading-skeleton:nth-child(3) {
+  width: 92%;
+}
+
+.loading-skeleton:nth-child(4) {
+  width: 88%;
+}
+
+.loading-skeleton:nth-child(5) {
+  width: 76%;
 }
 
 .filter-bar {
@@ -53,7 +115,8 @@
 }
 
 .filter-button:focus-visible,
-.create-link:focus-visible {
+.create-link:focus-visible,
+.back-link:focus-visible {
   outline: 2px solid #9bf6bd;
   outline-offset: 2px;
 }
@@ -106,14 +169,20 @@
 
 .edit-button,
 .toggle-button,
+.delete-button,
 .save-button,
-.cancel-button {
+.cancel-button,
+.dismiss-button {
   border-radius: 0.6rem;
   border: 1px solid #3e6787;
   background: #12304b;
   color: #ecf6ff;
   font-weight: 600;
   padding: 0.35rem 0.65rem;
+}
+
+.dismiss-button {
+  background: #1c2d40;
 }
 
 .edit-form {
@@ -153,6 +222,11 @@
   opacity: 0.65;
 }
 
+.delete-button {
+  border-color: #a85f6b;
+  background: #3f1a23;
+}
+
 .cancel-button {
   background: #0f1d31;
 }
@@ -183,15 +257,82 @@
   color: #ffd0d0;
 }
 
+.api-error-group {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.error-support {
+  margin: 0;
+  color: #c2d8e7;
+  font-size: 0.85rem;
+}
+
+.error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .edit-button:focus-visible,
 .toggle-button:focus-visible,
+.delete-button:focus-visible,
 .save-button:focus-visible,
 .cancel-button:focus-visible,
+.dismiss-button:focus-visible,
+.create-primary:focus-visible,
+.delete-confirm-button:focus-visible,
 .edit-form input:focus-visible,
 .edit-form textarea:focus-visible,
 .edit-form select:focus-visible {
   outline: 2px solid #9bf6bd;
   outline-offset: 2px;
+}
+
+.delete-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 10, 18, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.delete-dialog {
+  width: min(100%, 28rem);
+  border-radius: 0.9rem;
+  border: 1px solid #a85f6b;
+  background: #0f1d31;
+  padding: 1rem;
+  box-shadow: 0 1rem 2rem rgba(2, 9, 17, 0.5);
+}
+
+.delete-dialog h2 {
+  margin: 0;
+}
+
+.delete-dialog p {
+  margin: 0.6rem 0 0;
+}
+
+.delete-dialog-actions {
+  margin-top: 0.95rem;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.delete-confirm-button {
+  border-radius: 0.6rem;
+  border: 1px solid #a85f6b;
+  background: #5a2030;
+  color: #fff2f2;
+  font-weight: 700;
+  padding: 0.4rem 0.75rem;
+}
+
+.delete-confirm-button[disabled] {
+  opacity: 0.65;
 }
 
 .sr-only {
@@ -205,6 +346,16 @@
   border: 0;
 }
 
+@keyframes skeletonPulse {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 @media (max-width: 768px) {
   .task-list-shell {
     width: 100%;
@@ -212,5 +363,11 @@
 
   .row {
     grid-template-columns: 1fr;
+  }
+
+  .state-actions,
+  .error-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

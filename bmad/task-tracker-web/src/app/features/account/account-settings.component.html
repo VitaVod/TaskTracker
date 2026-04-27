@@ -1,0 +1,72 @@
+<main class="account-page">
+  <section class="account-shell" aria-live="polite">
+    <header class="account-header">
+      <p class="eyebrow">TaskTracker / Account</p>
+      <h1>Profile and preferences</h1>
+      <p>Keep your identity and local preferences up to date.</p>
+      <a routerLink="/dashboard" class="back-link">Back to dashboard</a>
+    </header>
+
+    @if (isLoading) {
+      <p class="loading">Loading account data...</p>
+    } @else {
+      <div class="grid">
+        <article class="panel">
+          <h2>Profile</h2>
+          <form [formGroup]="profileForm" (ngSubmit)="saveProfile()" novalidate>
+            <label for="displayName">Display name</label>
+            <input id="displayName" type="text" formControlName="displayName" maxlength="80" autocomplete="name" />
+            @if (profileForm.controls.displayName.invalid && profileForm.controls.displayName.touched) {
+              <p class="field-error">Display name must be 2-80 characters.</p>
+            }
+            @if (fieldErrorFor('profile', 'displayName')) {
+              <p class="field-error">{{ fieldErrorFor('profile', 'displayName') }}</p>
+            }
+            @if (profileError) {
+              <p class="api-error">{{ profileError }}</p>
+            }
+            @if (profileMessage) {
+              <p class="success">{{ profileMessage }}</p>
+            }
+            <button type="submit" [disabled]="isSavingProfile || !hasLoadedAccount">
+              {{ isSavingProfile ? 'Saving profile...' : 'Save profile' }}
+            </button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <h2>Settings</h2>
+          <form [formGroup]="settingsForm" (ngSubmit)="saveSettings()" novalidate>
+            <label for="timeZoneId">Time zone</label>
+            <input id="timeZoneId" type="text" formControlName="timeZoneId" maxlength="64" />
+            @if (settingsForm.controls.timeZoneId.invalid && settingsForm.controls.timeZoneId.touched) {
+              <p class="field-error">Provide a valid time zone identifier like UTC or Europe/Kyiv.</p>
+            }
+            @if (fieldErrorFor('settings', 'timeZoneId')) {
+              <p class="field-error">{{ fieldErrorFor('settings', 'timeZoneId') }}</p>
+            }
+
+            <label for="locale">Locale</label>
+            <input id="locale" type="text" formControlName="locale" maxlength="16" />
+            @if (settingsForm.controls.locale.invalid && settingsForm.controls.locale.touched) {
+              <p class="field-error">Locale must use ll or ll-RR format (for example en-US).</p>
+            }
+            @if (fieldErrorFor('settings', 'locale')) {
+              <p class="field-error">{{ fieldErrorFor('settings', 'locale') }}</p>
+            }
+
+            @if (settingsError) {
+              <p class="api-error">{{ settingsError }}</p>
+            }
+            @if (settingsMessage) {
+              <p class="success">{{ settingsMessage }}</p>
+            }
+            <button type="submit" [disabled]="isSavingSettings || !hasLoadedAccount">
+              {{ isSavingSettings ? 'Saving settings...' : 'Save settings' }}
+            </button>
+          </form>
+        </article>
+      </div>
+    }
+  </section>
+</main>

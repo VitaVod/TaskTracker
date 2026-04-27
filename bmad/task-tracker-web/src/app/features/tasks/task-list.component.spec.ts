@@ -10,7 +10,7 @@ describe('TaskListComponent', () => {
   let taskService: jasmine.SpyObj<TaskService>;
 
   beforeEach(async () => {
-    taskService = jasmine.createSpyObj<TaskService>('TaskService', ['getTasks', 'updateTask', 'toggleTaskCompletion']);
+    taskService = jasmine.createSpyObj<TaskService>('TaskService', ['getTasks', 'updateTask', 'toggleTaskCompletion', 'deleteTask']);
     taskService.getTasks.and.returnValue(of({
       items: [
         {
@@ -52,6 +52,7 @@ describe('TaskListComponent', () => {
       createdAtUtc: '2026-04-25T11:30:12Z',
       updatedAtUtc: '2026-04-26T09:15:03Z'
     }));
+    taskService.deleteTask.and.returnValue(of(void 0));
 
     await TestBed.configureTestingModule({
       imports: [TaskListComponent],
@@ -70,6 +71,155 @@ describe('TaskListComponent', () => {
     expect(taskService.getTasks).toHaveBeenCalledWith('all');
     expect(component.activeCount).toBe(1);
     expect(component.completedCount).toBe(0);
+  });
+
+  it('shows an action-oriented empty state when no tasks are returned', () => {
+    taskService.getTasks.and.returnValues(
+      of({
+        items: [],
+        summary: { activeCount: 0, completedCount: 0 }
+      }),
+      of({
+        items: [],
+        summary: { activeCount: 0, completedCount: 0 }
+      })
+    );
+
+    fixture = TestBed.createComponent(TaskListComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    const emptyHeading = fixture.nativeElement.querySelector('.empty-state h2') as HTMLElement;
+    expect(emptyHeading.textContent).toContain('No tasks yet');
+
+    const activeButton = fixture.nativeElement.querySelector('button[aria-label="Show active tasks"]') as HTMLButtonElement;
+    activeButton.click();
+    fixture.detectChanges();
+
+    const filteredHeading = fixture.nativeElement.querySelector('.empty-state h2') as HTMLElement;
+    const resetFilterButton = fixture.nativeElement.querySelector('.empty-state .cancel-button') as HTMLButtonElement;
+    expect(filteredHeading.textContent).toContain('No active tasks found');
+    expect(resetFilterButton.textContent).toContain('View all tasks');
+  });
+
+  it('shows loading placeholders while list request is in flight', () => {
+    const pending = new Subject<any>();
+    taskService.getTasks.and.returnValue(pending.asObservable());
+
+    fixture = TestBed.createComponent(TaskListComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    expect(component.isUiLoading()).toBeTrue();
+    const skeletons = fixture.nativeElement.querySelectorAll('.loading-skeleton') as NodeListOf<HTMLElement>;
+    expect(skeletons.length).toBe(3);
+    expect(Array.from(skeletons).every((skeleton) => skeleton.getAttribute('aria-hidden') === 'true')).toBeTrue();
+
+    pending.next({
+      items: [],
+      summary: { activeCount: 0, completedCount: 0 }
+    });
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(component.isUiEmpty()).toBeTrue();
+  });
+
+  it('ignores stale filter responses and keeps the latest selected filter results', () => {
+    const activeResponse = new Subject<any>();
+    const completedResponse = new Subject<any>();
+
+    taskService.getTasks.and.callFake((state) => {
+      if (state === 'active') {
+        return activeResponse.asObservable();
+      }
+
+      if (state === 'completed') {
+        return completedResponse.asObservable();
+      }
+
+      return of({
+        items: [],
+        summary: { activeCount: 0, completedCount: 0 }
+      });
+    });
+
+    component.setFilter('active');
+    component.setFilter('completed');
+
+    completedResponse.next({
+      items: [
+        {
+          id: 'completed-1',
+          title: 'Completed first',
+          description: 'done',
+          dueAtUtc: null,
+          priority: 'low',
+          category: 'work',
+          isCompleted: true,
+          createdAtUtc: '2026-04-25T11:30:12Z',
+          updatedAtUtc: '2026-04-25T12:30:12Z'
+        }
+      ],
+      summary: { activeCount: 3, completedCount: 7 }
+    });
+    completedResponse.complete();
+
+    // Simulate slower, stale active response completing after completed filter result.
+    activeResponse.next({
+      items: [
+        {
+          id: 'active-1',
+          title: 'Active late response',
+          description: 'in progress',
+          dueAtUtc: null,
+          priority: 'medium',
+          category: 'work',
+          isCompleted: false,
+          createdAtUtc: '2026-04-25T11:30:12Z',
+          updatedAtUtc: '2026-04-25T12:30:12Z'
+        }
+      ],
+      summary: { activeCount: 11, completedCount: 1 }
+    });
+    activeResponse.complete();
+
+    fixture.detectChanges();
+
+    expect(component.selectedFilter).toBe('completed');
+    expect(component.tasks.length).toBe(1);
+    expect(component.tasks[0].id).toBe('completed-1');
+    expect(component.activeCount).toBe(3);
+    expect(component.completedCount).toBe(7);
+  });
+
+  it('renders load error recovery actions and retries list loading', () => {
+    taskService.getTasks.calls.reset();
+    taskService.getTasks.and.returnValues(
+      throwError(() => ({
+        title: 'Request failed',
+        code: 'task.request.failed',
+        traceId: '0HNTRACE123'
+      })),
+      of({
+        items: [],
+        summary: { activeCount: 0, completedCount: 0 }
+      })
+    );
+
+    fixture = TestBed.createComponent(TaskListComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    expect(component.isUiLoadError()).toBeTrue();
+
+    const retryButton = fixture.nativeElement.querySelector('.error-state .save-button') as HTMLButtonElement;
+    retryButton.click();
+    fixture.detectChanges();
+
+    expect(taskService.getTasks.calls.count()).toBe(2);
+    expect(taskService.getTasks.calls.mostRecent().args[0]).toBe('all');
+    expect(component.isUiEmpty()).toBeTrue();
   });
 
   it('changes filter on click and requests completed tasks', () => {
@@ -155,6 +305,8 @@ describe('TaskListComponent', () => {
   it('keeps user edits when API update fails', () => {
     taskService.updateTask.and.returnValue(throwError(() => ({
       title: 'Validation failed',
+      code: 'validation.request.invalid',
+      traceId: '0HN1FDHJ123',
       errors: {
         title: ['The title field is required.']
       }
@@ -175,6 +327,8 @@ describe('TaskListComponent', () => {
     component.submitEdit();
 
     expect(component.saveErrorMessage).toBe('Validation failed');
+    expect(component.saveErrorCode).toBe('validation.request.invalid');
+    expect(component.saveErrorTraceId).toBe('0HN1FDHJ123');
     expect(component.fieldError('title')).toContain('required');
     expect(component.editForm.getRawValue().title).toBe('Potential new title');
   });
@@ -210,5 +364,82 @@ describe('TaskListComponent', () => {
     pending.complete();
 
     expect(component.isToggleInFlight(task.id)).toBeFalse();
+  });
+
+  it('offers retry for toggle failures and reuses the original intended completion target', () => {
+    taskService.toggleTaskCompletion.and.returnValues(
+      throwError(() => ({
+        title: 'Conflict',
+        code: 'task.completion.conflict',
+        traceId: '0HNTOGGLE123'
+      })),
+      of({
+        ...component.tasks[0],
+        isCompleted: true,
+        updatedAtUtc: '2026-04-26T09:15:03Z'
+      })
+    );
+
+    const task = component.tasks[0];
+    component.toggleCompletion(task, true);
+
+    expect(component.toggleError(task.id)).toBe('Conflict');
+    expect(component.toggleErrorSupportText(task.id)).toContain('task.completion.conflict');
+
+    component.retryToggle(task);
+
+    expect(taskService.toggleTaskCompletion.calls.count()).toBe(2);
+    expect(taskService.toggleTaskCompletion.calls.mostRecent().args[1]).toEqual({ isCompleted: true });
+  });
+
+  it('opens delete confirmation and allows cancel without removing task', () => {
+    const deleteButton = fixture.nativeElement.querySelector('button[aria-label="Delete task Plan sprint backlog"]') as HTMLButtonElement;
+    deleteButton.click();
+    fixture.detectChanges();
+
+    expect(component.pendingDeleteTask?.id).toBe('7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12');
+
+    const cancelButton = fixture.nativeElement.querySelector('.delete-dialog .cancel-button') as HTMLButtonElement;
+    cancelButton.click();
+    fixture.detectChanges();
+
+    expect(component.pendingDeleteTask).toBeNull();
+    expect(component.tasks.length).toBe(1);
+  });
+
+  it('confirms delete and reconciles list state after server success', () => {
+    const deleteButton = fixture.nativeElement.querySelector('button[aria-label="Delete task Plan sprint backlog"]') as HTMLButtonElement;
+    deleteButton.click();
+    fixture.detectChanges();
+
+    const confirmButton = fixture.nativeElement.querySelector('.delete-confirm-button') as HTMLButtonElement;
+    confirmButton.click();
+    fixture.detectChanges();
+
+    expect(taskService.deleteTask).toHaveBeenCalledWith('7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12');
+    expect(component.tasks.length).toBe(0);
+    expect(component.activeCount).toBe(0);
+    expect(component.completedCount).toBe(0);
+    expect(component.pendingDeleteTask).toBeNull();
+    expect(component.liveMessage).toContain('deleted');
+  });
+
+  it('keeps confirmation open and shows API error when delete fails', () => {
+    taskService.deleteTask.and.returnValue(throwError(() => ({
+      title: 'Forbidden',
+      detail: 'Cannot delete this task.'
+    })));
+
+    const deleteButton = fixture.nativeElement.querySelector('button[aria-label="Delete task Plan sprint backlog"]') as HTMLButtonElement;
+    deleteButton.click();
+    fixture.detectChanges();
+
+    const confirmButton = fixture.nativeElement.querySelector('.delete-confirm-button') as HTMLButtonElement;
+    confirmButton.click();
+    fixture.detectChanges();
+
+    expect(component.pendingDeleteTask).not.toBeNull();
+    expect(component.deleteErrorMessage).toBe('Forbidden');
+    expect(component.tasks.length).toBe(1);
   });
 });

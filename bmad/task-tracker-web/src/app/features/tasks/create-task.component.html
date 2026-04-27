@@ -1,0 +1,81 @@
+<main class="task-page">
+  <section class="task-shell">
+    <header>
+      <p class="eyebrow">TaskTracker / Tasks</p>
+      <h1>Create task</h1>
+      <p class="subtitle">Capture a new task and send it directly to your backlog.</p>
+      <a routerLink="/dashboard" class="back-link">Back to dashboard</a>
+    </header>
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <label for="title">Title</label>
+      <input id="title" type="text" formControlName="title" maxlength="160" />
+      @if (form.controls.title.invalid && form.controls.title.touched) {
+        <p class="field-error">Title is required and must be 160 characters or fewer.</p>
+      }
+      @if (fieldError('title')) {
+        <p class="field-error">{{ fieldError('title') }}</p>
+      }
+
+      <label for="description">Description</label>
+      <textarea id="description" formControlName="description" maxlength="2000" rows="4"></textarea>
+      @if (fieldError('description')) {
+        <p class="field-error">{{ fieldError('description') }}</p>
+      }
+
+      <div class="row">
+        <div>
+          <label for="dueAtUtc">Due date (UTC)</label>
+          <input
+            id="dueAtUtc"
+            type="datetime-local"
+            formControlName="dueAtUtc"
+            [attr.min]="minDueDateTimeLocal"
+            (change)="closeDatePicker($event)" />
+          @if (form.controls.dueAtUtc.hasError('pastDueDate') && form.controls.dueAtUtc.touched) {
+            <p class="field-error">Due date cannot be in the past.</p>
+          }
+          @if (fieldError('dueAtUtc')) {
+            <p class="field-error">{{ fieldError('dueAtUtc') }}</p>
+          }
+        </div>
+
+        <div>
+          <label for="priority">Priority</label>
+          <select id="priority" formControlName="priority">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+          @if (fieldError('priority')) {
+            <p class="field-error">{{ fieldError('priority') }}</p>
+          }
+        </div>
+      </div>
+
+      <label for="category">Category</label>
+      <select id="category" formControlName="category">
+        @for (category of categoryOptions; track category.value) {
+          <option [value]="category.value">{{ category.label }}</option>
+        }
+      </select>
+      @if (form.controls.category.invalid && form.controls.category.touched) {
+        <p class="field-error">Category is required.</p>
+      }
+      @if (fieldError('category')) {
+        <p class="field-error">{{ fieldError('category') }}</p>
+      }
+
+      @if (errorMessage) {
+        <p class="api-error">{{ errorMessage }}</p>
+      }
+      @if (successMessage) {
+        <p class="success">{{ successMessage }}</p>
+      }
+
+      <button type="submit" [disabled]="isSubmitting">
+        {{ isSubmitting ? 'Creating task...' : 'Create task' }}
+      </button>
+    </form>
+  </section>
+</main>
