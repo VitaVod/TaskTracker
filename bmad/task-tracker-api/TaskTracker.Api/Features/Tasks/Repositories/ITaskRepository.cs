@@ -15,7 +15,8 @@ public enum TaskCompletionToggleStatus
     Updated,
     Forbidden,
     NotFound,
-    IdempotentReplay
+    IdempotentReplay,
+    InvalidTimeZone
 }
 
 public enum TaskDeleteStatus
@@ -30,7 +31,21 @@ public sealed record TaskUpdateResult(TaskUpdateStatus Status, TaskItem? Task);
 public sealed record TaskCompletionToggleResult(
     TaskCompletionToggleStatus Status,
     TaskItem? Task,
-    bool CompletionEventRecorded);
+    TaskProgressionOutcome? ProgressionOutcome);
+
+public sealed record TaskProgressionOutcome(
+    Guid CompletionEventId,
+    Guid? XpLedgerEntryId,
+    int XpGranted,
+    bool EligibleForXp,
+    bool IdempotentReplay,
+    string IdempotencyKey,
+    TaskStreakOutcome StreakOutcome,
+    int CurrentStreakDays,
+    int LongestStreakDays,
+    string TimeZoneId,
+    DateTime EvaluationWindowStartUtc,
+    DateTime EvaluationWindowEndUtc);
 
 public sealed record TaskDeleteResult(TaskDeleteStatus Status);
 
@@ -58,6 +73,7 @@ public interface ITaskRepository
         Guid taskId,
         bool isCompleted,
         string idempotencyKey,
+        string traceId,
         DateTime updatedAtUtc,
         CancellationToken cancellationToken);
 

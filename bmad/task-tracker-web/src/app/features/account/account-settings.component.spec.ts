@@ -22,6 +22,7 @@ describe('AccountSettingsComponent', () => {
       displayName: 'Tester',
       timeZoneId: 'UTC',
       locale: 'en-US',
+      leaderboardParticipationMode: 'hidden',
       updatedAtUtc: new Date().toISOString()
     }));
 
@@ -69,12 +70,17 @@ describe('AccountSettingsComponent', () => {
       }))
     );
 
-    component.settingsForm.setValue({ timeZoneId: 'Bad/Zone', locale: 'en-US' });
+    component.settingsForm.setValue({
+      timeZoneId: 'Bad/Zone',
+      locale: 'en-US',
+      leaderboardParticipationMode: 'anonymous'
+    });
 
     component.saveSettings();
 
     expect(component.settingsFieldErrors['timeZoneId'][0]).toContain('not valid');
     expect(component.settingsForm.getRawValue().timeZoneId).toBe('Bad/Zone');
+    expect(component.settingsForm.getRawValue().leaderboardParticipationMode).toBe('anonymous');
   });
 
   it('blocks saves until fresh account data is loaded', async () => {

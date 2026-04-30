@@ -44,6 +44,7 @@ public class AccountControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal("account.me@example.com", payload.GetProperty("email").GetString());
         Assert.Equal("UTC", payload.GetProperty("timeZoneId").GetString());
         Assert.Equal("en-US", payload.GetProperty("locale").GetString());
+        Assert.Equal("hidden", payload.GetProperty("leaderboardParticipationMode").GetString());
     }
 
     [Fact]
@@ -87,7 +88,7 @@ public class AccountControllerTests : IClassFixture<AuthTestFactory>
     {
         var tokens = await RegisterAndLoginAsync("account.iana@example.com");
 
-        await PatchAsync(tokens.AccessToken, "/api/v1/account/settings", new { timeZoneId = "Europe/Kyiv", locale = "uk-UA" });
+        await PatchAsync(tokens.AccessToken, "/api/v1/account/settings", new { timeZoneId = "Europe/Kyiv", locale = "uk-UA", leaderboardParticipationMode = "public" });
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/account/me");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
@@ -98,6 +99,7 @@ public class AccountControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
         Assert.Equal("Europe/Kyiv", mePayload.GetProperty("timeZoneId").GetString());
         Assert.Equal("uk-UA", mePayload.GetProperty("locale").GetString());
+        Assert.Equal("public", mePayload.GetProperty("leaderboardParticipationMode").GetString());
     }
 
     [Fact]
@@ -106,7 +108,7 @@ public class AccountControllerTests : IClassFixture<AuthTestFactory>
         var tokens = await RegisterAndLoginAsync("account.update@example.com");
 
         await PatchAsync(tokens.AccessToken, "/api/v1/account/profile", new { displayName = "Alex Runner" });
-        await PatchAsync(tokens.AccessToken, "/api/v1/account/settings", new { timeZoneId = "UTC", locale = "uk-UA" });
+        await PatchAsync(tokens.AccessToken, "/api/v1/account/settings", new { timeZoneId = "UTC", locale = "uk-UA", leaderboardParticipationMode = "anonymous" });
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/account/me");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
@@ -118,6 +120,24 @@ public class AccountControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal("Alex Runner", mePayload.GetProperty("displayName").GetString());
         Assert.Equal("UTC", mePayload.GetProperty("timeZoneId").GetString());
         Assert.Equal("uk-UA", mePayload.GetProperty("locale").GetString());
+        Assert.Equal("anonymous", mePayload.GetProperty("leaderboardParticipationMode").GetString());
+    }
+
+    [Fact]
+    public async Task PatchSettings_WithInvalidLeaderboardParticipationMode_ReturnsValidationProblemDetails()
+    {
+        var tokens = await RegisterAndLoginAsync("account.mode.invalid@example.com");
+
+        using var request = new HttpRequestMessage(HttpMethod.Patch, "/api/v1/account/settings");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+        request.Content = JsonContent.Create(new { leaderboardParticipationMode = "everyone" });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("account.settings.validation_failed", payload.GetProperty("code").GetString());
+        Assert.True(payload.GetProperty("errors").TryGetProperty("leaderboardParticipationMode", out _));
     }
 
     [Fact]

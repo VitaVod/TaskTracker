@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
+import { ProgressService } from '../../shared/services/progress.service';
 import { TaskService } from '../../shared/services/task.service';
 import { TaskListComponent } from './task-list.component';
 
@@ -8,9 +9,11 @@ describe('TaskListComponent', () => {
   let fixture: ComponentFixture<TaskListComponent>;
   let component: TaskListComponent;
   let taskService: jasmine.SpyObj<TaskService>;
+  let progressService: jasmine.SpyObj<ProgressService>;
 
   beforeEach(async () => {
     taskService = jasmine.createSpyObj<TaskService>('TaskService', ['getTasks', 'updateTask', 'toggleTaskCompletion', 'deleteTask']);
+    progressService = jasmine.createSpyObj<ProgressService>('ProgressService', ['getXpSummary', 'getStreakSnapshot']);
     taskService.getTasks.and.returnValue(of({
       items: [
         {
@@ -42,22 +45,48 @@ describe('TaskListComponent', () => {
       updatedAtUtc: '2026-04-26T09:15:03Z'
     }));
     taskService.toggleTaskCompletion.and.returnValue(of({
-      id: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
-      title: 'Plan sprint backlog',
-      description: 'Draft story priorities',
-      dueAtUtc: null,
-      priority: 'medium',
-      category: 'work',
-      isCompleted: true,
-      createdAtUtc: '2026-04-25T11:30:12Z',
-      updatedAtUtc: '2026-04-26T09:15:03Z'
+      task: {
+        id: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
+        title: 'Plan sprint backlog',
+        description: 'Draft story priorities',
+        dueAtUtc: null,
+        priority: 'medium',
+        category: 'work',
+        isCompleted: true,
+        createdAtUtc: '2026-04-25T11:30:12Z',
+        updatedAtUtc: '2026-04-26T09:15:03Z'
+      },
+      progression: {
+        completionEventId: '2d912ba8-f0d2-4d59-a5ec-8ef0f2d5cae2',
+        xpLedgerEntryId: '68e4bba9-b3ef-4d15-bf33-8ea47d3fbf56',
+        xpGranted: 10,
+        eligibleForXp: true,
+        idempotentReplay: false,
+        idempotencyKey: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
+        traceId: '0HNXP123'
+      }
     }));
     taskService.deleteTask.and.returnValue(of(void 0));
+    progressService.getXpSummary.and.returnValue(of({
+      totalXp: 110,
+      ledgerEntryCount: 11,
+      lastGrantedAtUtc: '2026-04-26T09:15:03Z'
+    }));
+    progressService.getStreakSnapshot.and.returnValue(of({
+      outcome: 'continue',
+      currentStreakDays: 4,
+      longestStreakDays: 10,
+      timeZoneId: 'UTC',
+      evaluationWindowStartUtc: '2026-04-25T00:00:00Z',
+      evaluationWindowEndUtc: '2026-04-26T00:00:00Z',
+      lastEvaluatedAtUtc: '2026-04-26T09:15:03Z'
+    }));
 
     await TestBed.configureTestingModule({
       imports: [TaskListComponent],
       providers: [
         { provide: TaskService, useValue: taskService },
+        { provide: ProgressService, useValue: progressService },
         provideRouter([])
       ]
     }).compileComponents();
@@ -69,8 +98,84 @@ describe('TaskListComponent', () => {
 
   it('loads all tasks by default on init', () => {
     expect(taskService.getTasks).toHaveBeenCalledWith('all');
+    expect(progressService.getXpSummary).toHaveBeenCalled();
+    expect(progressService.getStreakSnapshot).toHaveBeenCalled();
     expect(component.activeCount).toBe(1);
     expect(component.completedCount).toBe(0);
+  });
+
+  it('renders completion feedback and refreshes progress after successful completion', () => {
+    const task = component.tasks[0];
+    progressService.getXpSummary.calls.reset();
+    progressService.getStreakSnapshot.calls.reset();
+
+    component.toggleCompletion(task, true);
+
+    expect(component.completionFeedback).not.toBeNull();
+    expect(component.completionFeedback?.message).toContain('+10 XP');
+    expect(component.progressAnnouncement).toContain('XP');
+    expect(progressService.getXpSummary).toHaveBeenCalled();
+    expect(progressService.getStreakSnapshot).toHaveBeenCalled();
+  });
+
+  it('does not duplicate celebratory feedback for replayed completion events', () => {
+    taskService.toggleTaskCompletion.and.returnValues(
+      of({
+        task: {
+          ...component.tasks[0],
+          isCompleted: true,
+          updatedAtUtc: '2026-04-26T09:15:03Z'
+        },
+        progression: {
+          completionEventId: 'event-1',
+          xpLedgerEntryId: 'ledger-1',
+          xpGranted: 10,
+          eligibleForXp: true,
+          idempotentReplay: false,
+          idempotencyKey: 'idem-1',
+          traceId: 'trace-1',
+          streak: {
+            outcome: 'continue',
+            currentStreakDays: 4,
+            longestStreakDays: 10,
+            timeZoneId: 'UTC',
+            evaluationWindowStartUtc: '2026-04-25T00:00:00Z',
+            evaluationWindowEndUtc: '2026-04-26T00:00:00Z'
+          }
+        }
+      }),
+      of({
+        task: {
+          ...component.tasks[0],
+          isCompleted: true,
+          updatedAtUtc: '2026-04-26T09:16:03Z'
+        },
+        progression: {
+          completionEventId: 'event-1',
+          xpLedgerEntryId: 'ledger-1',
+          xpGranted: 10,
+          eligibleForXp: true,
+          idempotentReplay: true,
+          idempotencyKey: 'idem-2',
+          traceId: 'trace-2',
+          streak: {
+            outcome: 'continue',
+            currentStreakDays: 4,
+            longestStreakDays: 10,
+            timeZoneId: 'UTC',
+            evaluationWindowStartUtc: '2026-04-25T00:00:00Z',
+            evaluationWindowEndUtc: '2026-04-26T00:00:00Z'
+          }
+        }
+      })
+    );
+
+    const task = component.tasks[0];
+    component.toggleCompletion(task, true);
+    const firstMessage = component.completionFeedback?.message;
+    component.toggleCompletion(component.tasks[0], true);
+
+    expect(component.completionFeedback?.message).toBe(firstMessage);
   });
 
   it('shows an action-oriented empty state when no tasks are returned', () => {
@@ -342,7 +447,7 @@ describe('TaskListComponent', () => {
     expect(component.tasks[0].isCompleted).toBeTrue();
     expect(component.activeCount).toBe(0);
     expect(component.completedCount).toBe(1);
-    expect(component.liveMessage).toContain('marked completed');
+    expect(component.liveMessage).toContain('+10 XP awarded');
   });
 
   it('prevents duplicate toggle submissions while request is in-flight', () => {
@@ -357,9 +462,20 @@ describe('TaskListComponent', () => {
     expect(component.isToggleInFlight(task.id)).toBeTrue();
 
     pending.next({
-      ...task,
-      isCompleted: true,
-      updatedAtUtc: '2026-04-26T09:15:03Z'
+      task: {
+        ...task,
+        isCompleted: true,
+        updatedAtUtc: '2026-04-26T09:15:03Z'
+      },
+      progression: {
+        completionEventId: '2d912ba8-f0d2-4d59-a5ec-8ef0f2d5cae2',
+        xpLedgerEntryId: '68e4bba9-b3ef-4d15-bf33-8ea47d3fbf56',
+        xpGranted: 10,
+        eligibleForXp: true,
+        idempotentReplay: false,
+        idempotencyKey: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
+        traceId: '0HNXP123'
+      }
     });
     pending.complete();
 
@@ -374,9 +490,20 @@ describe('TaskListComponent', () => {
         traceId: '0HNTOGGLE123'
       })),
       of({
-        ...component.tasks[0],
-        isCompleted: true,
-        updatedAtUtc: '2026-04-26T09:15:03Z'
+        task: {
+          ...component.tasks[0],
+          isCompleted: true,
+          updatedAtUtc: '2026-04-26T09:15:03Z'
+        },
+        progression: {
+          completionEventId: '2d912ba8-f0d2-4d59-a5ec-8ef0f2d5cae2',
+          xpLedgerEntryId: '68e4bba9-b3ef-4d15-bf33-8ea47d3fbf56',
+          xpGranted: 10,
+          eligibleForXp: true,
+          idempotentReplay: true,
+          idempotencyKey: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
+          traceId: '0HNXP123'
+        }
       })
     );
 

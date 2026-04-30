@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TaskTracker.Api.Features.Tasks.Contracts;
 using TaskTracker.Api.Infrastructure.Persistence.Entities;
 
 namespace TaskTracker.Api.Infrastructure.Persistence;
@@ -14,6 +15,10 @@ public class TaskTrackerDbContext(DbContextOptions<TaskTrackerDbContext> options
 	public DbSet<TaskItem> Tasks => Set<TaskItem>();
 
 	public DbSet<TaskCompletionEvent> TaskCompletionEvents => Set<TaskCompletionEvent>();
+
+	public DbSet<XpLedgerEntry> XpLedgerEntries => Set<XpLedgerEntry>();
+
+	public DbSet<UserStreakSnapshot> UserStreakSnapshots => Set<UserStreakSnapshot>();
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
@@ -49,6 +54,22 @@ public class TaskTrackerDbContext(DbContextOptions<TaskTrackerDbContext> options
 
 			entity.Property(user => user.Role)
 				.HasMaxLength(16)
+				.IsRequired();
+
+			entity.Property(user => user.LeaderboardParticipationMode)
+				.HasMaxLength(16)
+				.HasConversion(
+					mode => mode == LeaderboardParticipationMode.Public
+						? "public"
+						: mode == LeaderboardParticipationMode.Anonymous
+							? "anonymous"
+							: "hidden",
+					value => value == "public"
+						? LeaderboardParticipationMode.Public
+						: value == "anonymous"
+							? LeaderboardParticipationMode.Anonymous
+							: LeaderboardParticipationMode.Hidden)
+				.HasDefaultValue(LeaderboardParticipationMode.Hidden)
 				.IsRequired();
 
 			entity.Property(user => user.CreatedAtUtc)
@@ -198,6 +219,105 @@ public class TaskTrackerDbContext(DbContextOptions<TaskTrackerDbContext> options
 				{ completionEvent.TaskId, completionEvent.OwnerId, completionEvent.IdempotencyKey })
 				.IsUnique();
 			entity.HasIndex(completionEvent => completionEvent.OccurredAtUtc);
+			entity.HasIndex(completionEvent => new
+				{ completionEvent.OwnerId, completionEvent.EventName, completionEvent.OccurredAtUtc });
+		});
+
+		modelBuilder.Entity<XpLedgerEntry>(entity =>
+		{
+			entity.ToTable("XpLedgerEntries");
+
+			entity.HasKey(xpLedgerEntry => xpLedgerEntry.Id);
+
+			entity.Property(xpLedgerEntry => xpLedgerEntry.EventName)
+				.HasMaxLength(64)
+				.IsRequired();
+
+			entity.Property(xpLedgerEntry => xpLedgerEntry.IdempotencyKey)
+				.HasMaxLength(64)
+				.IsRequired();
+
+			entity.Property(xpLedgerEntry => xpLedgerEntry.XpGranted)
+				.IsRequired();
+
+			entity.Property(xpLedgerEntry => xpLedgerEntry.OccurredAtUtc)
+				.IsRequired();
+
+			entity.Property(xpLedgerEntry => xpLedgerEntry.CreatedAtUtc)
+				.IsRequired();
+
+			entity.HasOne<User>()
+				.WithMany()
+				.HasForeignKey(xpLedgerEntry => xpLedgerEntry.OwnerId)
+				.OnDelete(DeleteBehavior.NoAction);
+
+			entity.HasOne<TaskItem>()
+				.WithMany()
+				.HasForeignKey(xpLedgerEntry => xpLedgerEntry.TaskId)
+				.OnDelete(DeleteBehavior.NoAction);
+
+			entity.HasOne<TaskCompletionEvent>()
+				.WithMany()
+				.HasForeignKey(xpLedgerEntry => xpLedgerEntry.TaskCompletionEventId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			entity.HasIndex(xpLedgerEntry => xpLedgerEntry.TaskCompletionEventId)
+				.IsUnique();
+			entity.HasIndex(xpLedgerEntry => new { xpLedgerEntry.OwnerId, xpLedgerEntry.TaskId, xpLedgerEntry.IdempotencyKey })
+				.IsUnique();
+			entity.HasIndex(xpLedgerEntry => new { xpLedgerEntry.OwnerId, xpLedgerEntry.OccurredAtUtc });
+		});
+
+		modelBuilder.Entity<UserStreakSnapshot>(entity =>
+		{
+			entity.ToTable("UserStreakSnapshots");
+
+			entity.HasKey(snapshot => snapshot.OwnerId);
+
+			entity.Property(snapshot => snapshot.Outcome)
+				.HasMaxLength(16)
+				.HasConversion(
+					outcome => outcome == TaskStreakOutcome.Continue
+						? "continue"
+						: outcome == TaskStreakOutcome.Reset
+							? "reset"
+							: "restart",
+					value => value == "continue"
+						? TaskStreakOutcome.Continue
+						: value == "reset"
+							? TaskStreakOutcome.Reset
+							: TaskStreakOutcome.Restart)
+				.IsRequired();
+
+			entity.Property(snapshot => snapshot.CurrentStreakDays)
+				.IsRequired();
+
+			entity.Property(snapshot => snapshot.LongestStreakDays)
+				.IsRequired();
+
+			entity.Property(snapshot => snapshot.TimeZoneId)
+				.HasMaxLength(64)
+				.IsRequired();
+
+			entity.Property(snapshot => snapshot.EvaluationWindowStartUtc)
+				.IsRequired();
+
+			entity.Property(snapshot => snapshot.EvaluationWindowEndUtc)
+				.IsRequired();
+
+			entity.Property(snapshot => snapshot.LastEvaluationTraceId)
+				.HasMaxLength(128)
+				.IsRequired();
+
+			entity.Property(snapshot => snapshot.LastEvaluatedAtUtc)
+				.IsRequired();
+
+			entity.HasOne<User>()
+				.WithMany()
+				.HasForeignKey(snapshot => snapshot.OwnerId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			entity.HasIndex(snapshot => new { snapshot.CurrentStreakDays, snapshot.OwnerId });
 		});
 	}
 }

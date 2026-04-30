@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using TaskTracker.Api.Infrastructure.Persistence.Entities;
 using TimeZoneConverter;
 
 namespace TaskTracker.Api.Features.Account.Validation;
@@ -23,6 +24,8 @@ public sealed record AccountSettingsPatchValidationResult(
     string TimeZoneId,
     bool HasLocale,
     string Locale,
+    bool HasLeaderboardParticipationMode,
+    LeaderboardParticipationMode LeaderboardParticipationMode,
     Dictionary<string, string[]> Errors);
 
 public class AccountUpdateValidator : IAccountUpdateValidator
@@ -80,13 +83,23 @@ public class AccountUpdateValidator : IAccountUpdateValidator
         if (payload.ValueKind != JsonValueKind.Object)
         {
             errors["$"] = ["Request body must be a JSON object."];
-            return new AccountSettingsPatchValidationResult(false, false, string.Empty, false, string.Empty, errors);
+            return new AccountSettingsPatchValidationResult(
+                false,
+                false,
+                string.Empty,
+                false,
+                string.Empty,
+                false,
+                LeaderboardParticipationMode.Hidden,
+                errors);
         }
 
         var hasTimeZoneId = false;
         var hasLocale = false;
+        var hasLeaderboardParticipationMode = false;
         var timeZoneId = string.Empty;
         var locale = string.Empty;
+        var leaderboardParticipationMode = LeaderboardParticipationMode.Hidden;
 
         foreach (var property in payload.EnumerateObject())
         {
@@ -124,13 +137,41 @@ public class AccountUpdateValidator : IAccountUpdateValidator
 
                     break;
 
+                case "leaderboardParticipationMode":
+                    hasLeaderboardParticipationMode = true;
+                    if (property.Value.ValueKind != JsonValueKind.String)
+                    {
+                        errors["leaderboardParticipationMode"] = ["Leaderboard participation mode must be a string value."];
+                        break;
+                    }
+
+                    var modeValue = property.Value.GetString()?.Trim() ?? string.Empty;
+                    if (string.Equals(modeValue, "public", StringComparison.OrdinalIgnoreCase))
+                    {
+                        leaderboardParticipationMode = LeaderboardParticipationMode.Public;
+                    }
+                    else if (string.Equals(modeValue, "anonymous", StringComparison.OrdinalIgnoreCase))
+                    {
+                        leaderboardParticipationMode = LeaderboardParticipationMode.Anonymous;
+                    }
+                    else if (string.Equals(modeValue, "hidden", StringComparison.OrdinalIgnoreCase))
+                    {
+                        leaderboardParticipationMode = LeaderboardParticipationMode.Hidden;
+                    }
+                    else
+                    {
+                        errors["leaderboardParticipationMode"] = ["Leaderboard participation mode must be one of: public, anonymous, hidden."];
+                    }
+
+                    break;
+
                 default:
                     errors[property.Name] = ["This field cannot be updated."];
                     break;
             }
         }
 
-        if (!hasTimeZoneId && !hasLocale)
+        if (!hasTimeZoneId && !hasLocale && !hasLeaderboardParticipationMode)
         {
             errors["$"] = ["At least one settings field must be provided."];
         }
@@ -141,6 +182,8 @@ public class AccountUpdateValidator : IAccountUpdateValidator
             timeZoneId,
             hasLocale,
             locale,
+            hasLeaderboardParticipationMode,
+            leaderboardParticipationMode,
             errors);
     }
 

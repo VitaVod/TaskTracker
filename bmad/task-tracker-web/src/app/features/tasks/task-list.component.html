@@ -30,7 +30,55 @@
       Active: {{ activeCount }} | Completed: {{ completedCount }}
     </p>
 
+    <section class="progress-hud" aria-label="Dashboard progress feedback">
+      @if (completionFeedback) {
+        <article class="xp-feedback-toast" [class.info]="completionFeedback.tone === 'info'" role="status" aria-live="polite">
+          <div class="feedback-copy">
+            <p class="toast-title">XP feedback</p>
+            <p class="toast-message">{{ completionFeedback.message }}</p>
+            <p class="toast-meta">{{ completionFeedback.streakMessage }}</p>
+            @if (completionFeedback.replay) {
+              <p class="toast-meta">Replay detected. Visible celebration is muted to avoid duplicate momentum effects.</p>
+            }
+          </div>
+          <button
+            type="button"
+            class="dismiss-button"
+            aria-label="Dismiss XP feedback"
+            (click)="dismissCompletionFeedback()">
+            Dismiss
+          </button>
+        </article>
+      }
+
+      @if (progressState === 'loading') {
+        <article class="streak-card loading" aria-busy="true" aria-live="polite">
+          <p class="toast-title">Streak continuity</p>
+          <p class="status">Loading progress snapshot...</p>
+        </article>
+      } @else if (progressState === 'error') {
+        <article class="streak-card error" role="alert" aria-live="assertive">
+          <p class="toast-title">Streak continuity</p>
+          <p class="status error">{{ progressMessage }}</p>
+          @if (progressSupportText()) {
+            <p class="error-support">{{ progressSupportText() }}</p>
+          }
+          <button type="button" class="save-button" (click)="retryProgressSnapshot()">Retry progress refresh</button>
+        </article>
+      } @else {
+        <article class="streak-card" aria-live="polite">
+          <p class="toast-title">Streak continuity</p>
+          <p class="streak-icon">Status: {{ streakIconLabel() }}</p>
+          <p class="streak-primary">Current streak: {{ streakSnapshot?.currentStreakDays ?? 0 }} day(s)</p>
+          <p class="streak-secondary">Longest streak: {{ streakSnapshot?.longestStreakDays ?? 0 }} day(s)</p>
+          <p class="streak-secondary">{{ streakOutcomeLabel() }}</p>
+          <p class="streak-cue">Next action: {{ nextActionCue() }}</p>
+        </article>
+      }
+    </section>
+
     <p class="sr-only" aria-live="polite">{{ liveMessage }}</p>
+    <p class="sr-only" aria-live="polite">{{ progressAnnouncement }}</p>
     <p class="sr-only" aria-live="assertive">{{ isUiLoadError() ? currentLoadErrorMessage() : '' }}</p>
 
     @if (isUiLoading()) {

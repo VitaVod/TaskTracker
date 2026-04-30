@@ -49,6 +49,7 @@ public class AuthRepository(
             TimeZoneId = "UTC",
             Locale = "en-US",
             Role = AppRoles.User,
+            LeaderboardParticipationMode = LeaderboardParticipationMode.Hidden,
             CreatedAtUtc = DateTime.UtcNow,
             ModifiedAtUtc = DateTime.UtcNow
         };

@@ -168,7 +168,7 @@ public class TasksController(
     }
 
     [HttpPatch("{taskId}/completion")]
-    [ProducesResponseType<TaskResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ToggleTaskCompletionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
@@ -211,6 +211,7 @@ public class TasksController(
             parsedTaskId,
             request.IsCompleted!.Value,
             idempotencyKey!,
+            HttpContext.TraceIdentifier,
             now,
             cancellationToken);
 
@@ -224,14 +225,53 @@ public class TasksController(
             return NotFoundProblem("tasks.not_found", "Task could not be found.");
         }
 
+        if (toggleResult.Status == TaskCompletionToggleStatus.InvalidTimeZone)
+        {
+            var timeZoneErrors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["timeZoneId"] = ["The account timezone is invalid. Please update your account settings."]
+            };
+
+            return ValidationProblem("tasks.streak.timezone.invalid", timeZoneErrors);
+        }
+
+        var progression = toggleResult.ProgressionOutcome;
+        var streak = progression is null
+            ? new TaskCompletionStreakResponse(
+                TaskStreakOutcome.Reset,
+                0,
+                0,
+                "UTC",
+                now,
+                now)
+            : new TaskCompletionStreakResponse(
+                progression.StreakOutcome,
+                progression.CurrentStreakDays,
+                progression.LongestStreakDays,
+                progression.TimeZoneId,
+                progression.EvaluationWindowStartUtc,
+                progression.EvaluationWindowEndUtc);
+
+        var progressionResponse = new TaskCompletionProgressionResponse(
+            progression?.CompletionEventId,
+            progression?.XpLedgerEntryId,
+            progression?.XpGranted ?? 0,
+            progression?.EligibleForXp ?? false,
+            progression?.IdempotentReplay ?? toggleResult.Status == TaskCompletionToggleStatus.IdempotentReplay,
+            progression?.IdempotencyKey ?? idempotencyKey!,
+            HttpContext.TraceIdentifier,
+            streak);
+
         logger.LogInformation(
-            "Task completion toggled for task {TaskId} by user {UserId}. CompletionEventRecorded: {CompletionEventRecorded}. TraceId: {TraceId}",
+            "Task completion toggled for task {TaskId} by user {UserId}. EventId: {EventId}. XpGranted: {XpGranted}. Replay: {Replay}. TraceId: {TraceId}",
             parsedTaskId,
             userId,
-            toggleResult.CompletionEventRecorded,
+            progressionResponse.CompletionEventId,
+            progressionResponse.XpGranted,
+            progressionResponse.IdempotentReplay,
             HttpContext.TraceIdentifier);
 
-        return Ok(ToResponse(toggleResult.Task!));
+        return Ok(new ToggleTaskCompletionResponse(ToResponse(toggleResult.Task!), progressionResponse));
     }
 
     [HttpDelete("{taskId}")]

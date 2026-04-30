@@ -563,6 +563,33 @@ public class AuthTestFactory : WebApplicationFactory<Program>
         await dbContext.SaveChangesAsync();
     }
 
+    public async Task SetUserTimeZoneAsync(Guid userId, string timeZoneId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var user = await dbContext.Users.FirstAsync(u => u.Id == userId);
+        user.TimeZoneId = timeZoneId;
+        await dbContext.SaveChangesAsync();
+    }
+    
+    public async Task SetUserDisplayNameAsync(Guid userId, string displayName)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var user = await dbContext.Users.FirstAsync(u => u.Id == userId);
+        user.DisplayName = displayName;
+        await dbContext.SaveChangesAsync();
+    }
+    
+    public async Task SetLeaderboardParticipationModeAsync(Guid userId, LeaderboardParticipationMode mode)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var user = await dbContext.Users.FirstAsync(u => u.Id == userId);
+        user.LeaderboardParticipationMode = mode;
+        await dbContext.SaveChangesAsync();
+    }
+
     public async Task<int> CountTasksForUserAsync(Guid userId)
     {
         using var scope = Services.CreateScope();
@@ -615,6 +642,57 @@ public class AuthTestFactory : WebApplicationFactory<Program>
             && completionEvent.EventName == "TaskCompleted");
     }
 
+    public async Task<int> CountXpLedgerEntriesAsync(Guid taskId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        return await dbContext.XpLedgerEntries.CountAsync(entry => entry.TaskId == taskId);
+    }
+
+    public async Task AddTaskCompletionEventAsync(TaskCompletionEvent completionEvent)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        dbContext.TaskCompletionEvents.Add(completionEvent);
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task AddXpLedgerEntryAsync(XpLedgerEntry xpLedgerEntry)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        dbContext.XpLedgerEntries.Add(xpLedgerEntry);
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task UpsertStreakSnapshotAsync(UserStreakSnapshot snapshot)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+
+        var existing = await dbContext.UserStreakSnapshots.FirstOrDefaultAsync(
+            existingSnapshot => existingSnapshot.OwnerId == snapshot.OwnerId);
+
+        if (existing is null)
+        {
+            dbContext.UserStreakSnapshots.Add(snapshot);
+        }
+        else
+        {
+            existing.Outcome = snapshot.Outcome;
+            existing.CurrentStreakDays = snapshot.CurrentStreakDays;
+            existing.LongestStreakDays = snapshot.LongestStreakDays;
+            existing.TimeZoneId = snapshot.TimeZoneId;
+            existing.EvaluationWindowStartUtc = snapshot.EvaluationWindowStartUtc;
+            existing.EvaluationWindowEndUtc = snapshot.EvaluationWindowEndUtc;
+            existing.LastEvaluatedEventId = snapshot.LastEvaluatedEventId;
+            existing.LastEvaluationTraceId = snapshot.LastEvaluationTraceId;
+            existing.LastEvaluatedAtUtc = snapshot.LastEvaluatedAtUtc;
+        }
+
+        await dbContext.SaveChangesAsync();
+    }
+
     public IReadOnlyCollection<CapturedLogEntry> GetCapturedLogs() => _logs.ToArray();
 
     public void ClearCapturedLogs()
@@ -649,7 +727,13 @@ public sealed class TestLogger(string categoryName, ConcurrentQueue<CapturedLogE
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
-        logs.Enqueue(new CapturedLogEntry(logLevel, categoryName, formatter(state, exception)));
+        var message = formatter(state, exception);
+        if (exception is not null)
+        {
+            message = $"{message} Exception: {exception}";
+        }
+
+        logs.Enqueue(new CapturedLogEntry(logLevel, categoryName, message));
     }
 }
 

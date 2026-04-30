@@ -8,6 +8,7 @@ export interface AccountMeResponse {
   displayName: string;
   timeZoneId: string;
   locale: string;
+  leaderboardParticipationMode: 'public' | 'anonymous' | 'hidden';
   updatedAtUtc: string;
 }
 
@@ -22,6 +23,7 @@ export interface UpdateProfilePayload {
 export interface UpdateSettingsPayload {
   timeZoneId?: string;
   locale?: string;
+  leaderboardParticipationMode?: 'public' | 'anonymous' | 'hidden';
 }
 
 @Injectable({ providedIn: 'root' })

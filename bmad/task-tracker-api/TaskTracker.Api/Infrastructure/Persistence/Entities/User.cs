@@ -18,6 +18,8 @@ public class User
 
     public string Role { get; set; } = "User";
 
+    public LeaderboardParticipationMode LeaderboardParticipationMode { get; set; } = LeaderboardParticipationMode.Hidden;
+
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime ModifiedAtUtc { get; set; }

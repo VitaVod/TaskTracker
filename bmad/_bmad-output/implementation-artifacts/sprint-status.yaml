@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-24T14:14:44+03:00
-last_updated: 2026-04-27T21:05:00+03:00
+last_updated: 2026-04-30T14:45:00+03:00
 project: bmad
 project_key: NOKEY
 tracking_system: file-system
@@ -61,23 +61,23 @@ development_status:
   epic-2-retrospective: done
 
   epic-3: in-progress
-  3-1-build-xp-ledger-and-idempotent-completion-processing: ready-for-dev
-  3-2-implement-streak-rule-engine-with-timezone-policy: backlog
-  3-3-expose-progress-apis-for-xp-streak-and-trend-snapshots: backlog
-  3-4-build-dashboard-progress-components-and-feedback-ui: backlog
-  3-5-implement-momentum-summary-and-historical-progress-view: backlog
-  epic-3-retrospective: optional
+  3-1-build-xp-ledger-and-idempotent-completion-processing: done
+  3-2-implement-streak-rule-engine-with-timezone-policy: done
+  3-3-expose-progress-apis-for-xp-streak-and-trend-snapshots: done
+  3-4-build-dashboard-progress-components-and-feedback-ui: done
+  3-5-implement-momentum-summary-and-historical-progress-view: done
+  epic-3-retrospective: done
 
-  epic-4: backlog
-  4-1-implement-streak-and-completed-task-leaderboard-read-models: backlog
-  4-2-implement-privacy-safe-public-identity-and-participation-controls: backlog
-  4-3-build-global-statistics-endpoints-and-ui-panels: backlog
-  4-4-add-cache-and-invalidation-strategy-for-shared-views: backlog
-  4-5-build-leaderboard-ux-components-and-responsive-behaviors: backlog
-  epic-4-retrospective: optional
+  epic-4: in-progress
+  4-1-implement-streak-and-completed-task-leaderboard-read-models: done
+  4-2-implement-privacy-safe-public-identity-and-participation-controls: done
+  4-3-build-global-statistics-endpoints-and-ui-panels: done
+  4-4-add-cache-and-invalidation-strategy-for-shared-views: done
+  4-5-build-leaderboard-ux-components-and-responsive-behaviors: done
+  epic-4-retrospective: done
 
-  epic-5: backlog
-  5-1-implement-notification-preferences-domain-and-api: backlog
+  epic-5: in-progress
+  5-1-implement-notification-preferences-domain-and-api: ready-for-dev
   5-2-implement-reminder-email-pipeline-for-pending-tasks: backlog
   5-3-build-missed-day-recovery-experience-and-guidance: backlog
   5-4-implement-progress-explanation-messages-for-outcome-transparency: backlog

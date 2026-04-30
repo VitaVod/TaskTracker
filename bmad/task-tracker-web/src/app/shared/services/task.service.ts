@@ -6,6 +6,7 @@ import {
   CreateTaskRequest,
   TaskListResponse,
   TaskListState,
+  ToggleTaskCompletionResponse,
   TaskProblemDetails,
   TaskResponse,
   ToggleTaskCompletionRequest,
@@ -42,9 +43,9 @@ export class TaskService {
       .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));
   }
 
-  toggleTaskCompletion(taskId: string, payload: ToggleTaskCompletionRequest, idempotencyKey: string): Observable<TaskResponse> {
+  toggleTaskCompletion(taskId: string, payload: ToggleTaskCompletionRequest, idempotencyKey: string): Observable<ToggleTaskCompletionResponse> {
     return this.httpClient
-      .patch<TaskResponse>(
+      .patch<ToggleTaskCompletionResponse>(
         `${this.endpoint}/${taskId}/completion`,
         payload,
         {

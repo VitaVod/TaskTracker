@@ -42,6 +42,7 @@ public class AccountController(
             user.DisplayName,
             user.TimeZoneId,
             user.Locale,
+            ToParticipationModeValue(user.LeaderboardParticipationMode),
             user.ModifiedAtUtc));
     }
 
@@ -145,6 +146,7 @@ public class AccountController(
             user.DisplayName,
             user.TimeZoneId,
             user.Locale,
+            ToParticipationModeValue(user.LeaderboardParticipationMode),
             user.ModifiedAtUtc));
     }
 
@@ -183,7 +185,22 @@ public class AccountController(
             changed = true;
         }
 
+        if (validationResult.HasLeaderboardParticipationMode && user.LeaderboardParticipationMode != validationResult.LeaderboardParticipationMode)
+        {
+            user.LeaderboardParticipationMode = validationResult.LeaderboardParticipationMode;
+            changed = true;
+        }
+
         return changed;
+    }
+
+    private static string ToParticipationModeValue(LeaderboardParticipationMode mode)
+    {
+        return mode == LeaderboardParticipationMode.Public
+            ? "public"
+            : mode == LeaderboardParticipationMode.Anonymous
+                ? "anonymous"
+                : "hidden";
     }
 
     private ObjectResult ValidationProblem(string code, Dictionary<string, string[]> errors)

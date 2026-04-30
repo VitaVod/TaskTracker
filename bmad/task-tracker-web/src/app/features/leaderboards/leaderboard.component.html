@@ -1,0 +1,115 @@
+<main class="leaderboard-page">
+  <section class="leaderboard-shell">
+    <header>
+      <p class="eyebrow">TaskTracker / Leaderboards</p>
+      <h1>Community momentum</h1>
+      <p class="subtitle">Compare streak consistency and completed work across all participants.</p>
+      <div class="header-actions">
+        <a routerLink="/dashboard" class="back-link">Back to dashboard</a>
+      </div>
+    </header>
+
+    <nav class="type-toggle" aria-label="Leaderboard type">
+      @for (option of typeOptions; track option.value) {
+        <button
+          type="button"
+          class="type-button"
+          [class.active]="selectedType === option.value"
+          [attr.aria-pressed]="selectedType === option.value"
+          [attr.aria-label]="option.ariaLabel"
+          (click)="selectType(option.value)"
+          (keydown.enter)="setTypeFromKeyboard($event, option.value)"
+          (keydown.space)="setTypeFromKeyboard($event, option.value)">
+          {{ option.label }}
+        </button>
+      }
+    </nav>
+
+    <p class="sr-only" aria-live="polite">{{ liveMessage }}</p>
+
+    @if (state === 'loading') {
+      <section class="state-card" aria-live="polite" aria-busy="true">
+        <p class="state-title">Loading {{ selectedType === 'streak' ? 'streak' : 'completed tasks' }} leaderboard...</p>
+      </section>
+    } @else if (state === 'error') {
+      <section class="state-card" role="alert" aria-live="assertive">
+        <p class="state-title">{{ errorMessage }}</p>
+        @if (errorSupportText) {
+          <p class="state-meta">{{ errorSupportText }}</p>
+        }
+        <button type="button" class="action-button" (click)="retry()">Retry leaderboard refresh</button>
+      </section>
+    } @else if (state === 'empty') {
+      <section class="state-card" aria-live="polite">
+        <p class="state-title">No leaderboard entries available yet.</p>
+        <p class="state-meta">Participants will appear here once activity is recorded for this view.</p>
+      </section>
+    } @else {
+      <section class="table-shell" [attr.aria-label]="typeHeading()">
+        <header class="table-header">
+          <h2>{{ typeHeading() }}</h2>
+          <p class="page-summary">Showing {{ paginationSummary() }}</p>
+        </header>
+
+        <div class="table-wrap" role="region" [attr.aria-label]="typeHeading() + ' table'">
+          <table>
+            <caption class="sr-only">Leaderboard rows with rank, identity, movement, and metric value</caption>
+            <thead>
+              <tr>
+                <th scope="col">Rank</th>
+                <th scope="col">Identity</th>
+                <th scope="col">Movement</th>
+                <th scope="col">{{ metricColumnHeading() }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (entry of entries; track trackByRank($index, entry)) {
+                <tr>
+                  <td [attr.aria-label]="'Rank ' + entry.rank">#{{ entry.rank }}</td>
+                  <td>
+                    <div class="identity-cell">
+                      <span class="avatar-chip" aria-hidden="true">{{ entry.avatarMarker }}</span>
+                      <div>
+                        <p class="identity-name">{{ entry.publicIdentity }}</p>
+                        <p class="identity-mode">{{ identityModeLabel(entry) }}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="movement-indicator" [attr.aria-label]="movementAriaLabel(entry)">
+                      <span aria-hidden="true">{{ movementSymbol() }}</span>
+                      <span>{{ movementText() }}</span>
+                    </span>
+                  </td>
+                  <td [attr.aria-label]="metricValueLabel(entry)">{{ entry.metricValue }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <nav class="pagination" aria-label="Leaderboard pagination">
+          <button
+            type="button"
+            class="action-button"
+            (click)="previousPage()"
+            [disabled]="page <= 1"
+            [attr.aria-label]="'Go to previous page of ' + typeHeading()">
+            Previous page
+          </button>
+
+          <p class="page-label" aria-live="polite">Page {{ page }}</p>
+
+          <button
+            type="button"
+            class="action-button"
+            (click)="nextPage()"
+            [disabled]="!hasNextPage"
+            [attr.aria-label]="'Go to next page of ' + typeHeading()">
+            Next page
+          </button>
+        </nav>
+      </section>
+    }
+  </section>
+</main>

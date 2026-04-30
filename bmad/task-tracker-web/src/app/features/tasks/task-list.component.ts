@@ -9,10 +9,12 @@ import {
   Validators
 } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { finalize } from 'rxjs/operators';
+import { forkJoin, of } from 'rxjs';
+import { catchError, finalize } from 'rxjs/operators';
 import {
   TASK_CATEGORY_OPTIONS,
   TaskCategory,
+  TaskCompletionProgression,
   TaskListState,
   TaskPriority,
   TaskProblemDetails,
@@ -21,7 +23,20 @@ import {
   isTaskCategory,
   toTaskCategoryLabel
 } from '../../shared/models/task.models';
+import { ProgressStreakSnapshot, ProgressXpSummary } from '../../shared/models/progress.models';
+import { ProgressService } from '../../shared/services/progress.service';
 import { TaskService } from '../../shared/services/task.service';
+
+type ProgressCardState = 'loading' | 'ready' | 'error';
+type FeedbackTone = 'success' | 'info';
+
+interface CompletionFeedback {
+  message: string;
+  streakMessage: string;
+  tone: FeedbackTone;
+  replay: boolean;
+  xpGranted: number;
+}
 
 @Component({
   selector: 'app-task-list',
@@ -32,6 +47,7 @@ import { TaskService } from '../../shared/services/task.service';
 })
 export class TaskListComponent implements OnInit {
   private readonly taskService = inject(TaskService);
+  private readonly progressService = inject(ProgressService);
   private readonly formBuilder = inject(FormBuilder);
 
   readonly categoryOptions = TASK_CATEGORY_OPTIONS;
@@ -62,8 +78,17 @@ export class TaskListComponent implements OnInit {
   toggleErrorCodes: Record<string, string | undefined> = {};
   toggleErrorTraceIds: Record<string, string | undefined> = {};
   pendingDeleteTask: TaskResponse | null = null;
+  xpSummary: ProgressXpSummary | null = null;
+  streakSnapshot: ProgressStreakSnapshot | null = null;
+  progressState: ProgressCardState = 'loading';
+  progressMessage = '';
+  progressSupportCode?: string;
+  progressSupportTraceId?: string;
+  completionFeedback: CompletionFeedback | null = null;
+  progressAnnouncement = '';
   isDeleting = false;
   private readonly completionToggleInFlight = new Set<string>();
+  private readonly latestFeedbackKeyByTaskId: Record<string, string> = {};
   private readonly toggleTargetByTaskId: Record<string, boolean> = {};
   private deleteInFlightTaskId: string | null = null;
   private deleteReturnFocusElement: HTMLElement | null = null;
@@ -81,6 +106,7 @@ export class TaskListComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadTasks(false);
+    this.loadProgressSnapshot(false);
   }
 
   setFilter(filter: TaskListState): void {
@@ -99,6 +125,10 @@ export class TaskListComponent implements OnInit {
 
   retryLoad(): void {
     this.loadTasks(true);
+  }
+
+  retryProgressSnapshot(): void {
+    this.loadProgressSnapshot(true);
   }
 
   resetFilterToAll(): void {
@@ -126,6 +156,10 @@ export class TaskListComponent implements OnInit {
     delete this.toggleErrors[taskId];
     delete this.toggleErrorCodes[taskId];
     delete this.toggleErrorTraceIds[taskId];
+  }
+
+  dismissCompletionFeedback(): void {
+    this.completionFeedback = null;
   }
 
   retryToggle(task: TaskResponse): void {
@@ -201,6 +235,58 @@ export class TaskListComponent implements OnInit {
 
   toggleErrorSupportText(taskId: string): string {
     return this.problemSupportText(this.toggleErrorCodes[taskId], this.toggleErrorTraceIds[taskId]);
+  }
+
+  progressSupportText(): string {
+    return this.problemSupportText(this.progressSupportCode, this.progressSupportTraceId);
+  }
+
+  streakIconLabel(): string {
+    if (!this.streakSnapshot) {
+      return 'Unknown status';
+    }
+
+    if (this.streakSnapshot.outcome === 'continue') {
+      return 'Maintained streak';
+    }
+
+    if (this.streakSnapshot.outcome === 'restart') {
+      return 'Restarted streak';
+    }
+
+    return 'Streak reset';
+  }
+
+  streakOutcomeLabel(): string {
+    if (!this.streakSnapshot) {
+      return 'Streak data unavailable';
+    }
+
+    if (this.streakSnapshot.outcome === 'continue') {
+      return 'Continuity maintained';
+    }
+
+    if (this.streakSnapshot.outcome === 'restart') {
+      return 'Continuity restarted';
+    }
+
+    return 'Continuity reset';
+  }
+
+  nextActionCue(): string {
+    if (!this.streakSnapshot) {
+      return 'Complete a task to refresh continuity guidance.';
+    }
+
+    if (this.streakSnapshot.outcome === 'continue') {
+      return 'Complete at least one task in your next local-day window to keep momentum.';
+    }
+
+    if (this.streakSnapshot.outcome === 'restart') {
+      return 'Great recovery. Complete another task tomorrow to continue the renewed streak.';
+    }
+
+    return 'Start a new streak by completing a task in the current local-day window.';
   }
 
   trackByTaskId(_index: number, task: TaskResponse): string {
@@ -326,12 +412,13 @@ export class TaskListComponent implements OnInit {
       .toggleTaskCompletion(task.id, { isCompleted }, this.newIdempotencyKey())
       .pipe(finalize(() => { this.completionToggleInFlight.delete(task.id); }))
       .subscribe({
-        next: (updatedTask) => {
+        next: (toggleResponse) => {
+          const updatedTask = toggleResponse.task;
           this.reconcileTaskAfterCompletionToggle(task, updatedTask);
           this.refreshUiStateFromTasks();
-          this.liveMessage = updatedTask.isCompleted
-            ? `Task ${updatedTask.title} marked completed.`
-            : `Task ${updatedTask.title} marked active.`;
+          this.liveMessage = this.buildCompletionLiveMessage(updatedTask, toggleResponse.progression);
+          this.captureCompletionFeedback(updatedTask, toggleResponse.progression);
+          this.loadProgressSnapshot(false);
         },
         error: (error: TaskProblemDetails) => {
           this.toggleErrorCodes[task.id] = error.code;
@@ -525,6 +612,22 @@ export class TaskListComponent implements OnInit {
     this.tasks = this.tasks.map((task) => task.id === updatedTask.id ? updatedTask : task);
   }
 
+  private buildCompletionLiveMessage(task: TaskResponse, progression: TaskCompletionProgression): string {
+    if (!task.isCompleted) {
+      return `Task ${task.title} marked active.`;
+    }
+
+    if (progression.xpGranted > 0) {
+      return `Task ${task.title} marked completed. +${progression.xpGranted} XP awarded.`;
+    }
+
+    if (progression.idempotentReplay) {
+      return `Task ${task.title} completion confirmed with no duplicate XP.`;
+    }
+
+    return `Task ${task.title} marked completed.`;
+  }
+
   private reconcileTaskAfterDelete(deletedTask: TaskResponse): void {
     this.tasks = this.tasks.filter((task) => task.id !== deletedTask.id);
 
@@ -542,6 +645,7 @@ export class TaskListComponent implements OnInit {
     delete this.toggleErrorCodes[deletedTask.id];
     delete this.toggleErrorTraceIds[deletedTask.id];
     delete this.toggleTargetByTaskId[deletedTask.id];
+    delete this.latestFeedbackKeyByTaskId[deletedTask.id];
   }
 
   private refreshUiStateFromTasks(): void {
@@ -565,6 +669,99 @@ export class TaskListComponent implements OnInit {
     }
 
     return parts.join(' | ');
+  }
+
+  private loadProgressSnapshot(shouldAnnounceError: boolean): void {
+    if (!this.xpSummary || !this.streakSnapshot) {
+      this.progressState = 'loading';
+    }
+
+    this.progressMessage = '';
+    this.progressSupportCode = undefined;
+    this.progressSupportTraceId = undefined;
+
+    forkJoin({
+      xpSummary: this.progressService.getXpSummary().pipe(catchError(() => of(null))),
+      streakSnapshot: this.progressService.getStreakSnapshot().pipe(catchError(() => of(null)))
+    }).subscribe({
+      next: ({ xpSummary, streakSnapshot }) => {
+        if (xpSummary) {
+          this.xpSummary = xpSummary;
+        }
+
+        if (streakSnapshot) {
+          this.streakSnapshot = streakSnapshot;
+        }
+
+        if (this.xpSummary || this.streakSnapshot) {
+          this.progressState = 'ready';
+          return;
+        }
+
+        this.progressState = 'error';
+        this.progressMessage = 'Unable to load dashboard progress right now.';
+        if (shouldAnnounceError) {
+          this.progressAnnouncement = this.progressMessage;
+        }
+      },
+      error: (error: TaskProblemDetails) => {
+        this.progressState = 'error';
+        this.progressSupportCode = error.code;
+        this.progressSupportTraceId = error.traceId;
+        this.progressMessage = error.title ?? error.detail ?? 'Unable to load dashboard progress right now.';
+        if (shouldAnnounceError) {
+          this.progressAnnouncement = this.progressMessage;
+        }
+      }
+    });
+  }
+
+  private captureCompletionFeedback(task: TaskResponse, progression: TaskCompletionProgression): void {
+    if (!task.isCompleted) {
+      this.completionFeedback = null;
+      return;
+    }
+
+    const eventKey = progression.completionEventId ?? progression.idempotencyKey;
+    if (this.latestFeedbackKeyByTaskId[task.id] === eventKey) {
+      return;
+    }
+
+    this.latestFeedbackKeyByTaskId[task.id] = eventKey;
+
+    const streakMessage = this.buildStreakFeedbackMessage(progression);
+    const replay = progression.idempotentReplay;
+    const message = replay
+      ? `Completion confirmed for ${task.title}. No duplicate XP was granted.`
+      : progression.xpGranted > 0
+        ? `+${progression.xpGranted} XP for completing ${task.title}.`
+        : `Completion recorded for ${task.title}.`;
+
+    this.completionFeedback = {
+      message,
+      streakMessage,
+      tone: replay ? 'info' : 'success',
+      replay,
+      xpGranted: progression.xpGranted
+    };
+
+    this.progressAnnouncement = `${message} ${streakMessage}`.trim();
+  }
+
+  private buildStreakFeedbackMessage(progression: TaskCompletionProgression): string {
+    if (!progression.streak) {
+      return 'Streak status is refreshing.';
+    }
+
+    if (progression.streak.outcome === 'continue') {
+      return `Streak continues at ${progression.streak.currentStreakDays} day(s).`;
+    }
+
+    if (progression.streak.outcome === 'restart') {
+      return `Streak restarted at ${progression.streak.currentStreakDays} day(s).`;
+    }
+
+    return 'Streak reset. Complete another task to begin again.';
   }
 
   private restoreDeleteTriggerFocus(): void {

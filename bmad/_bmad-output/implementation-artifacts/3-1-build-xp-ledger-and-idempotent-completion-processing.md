@@ -1,6 +1,6 @@
 # Story 3.1: Build XP Ledger and Idempotent Completion Processing
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -17,35 +17,35 @@ so that progress feels fair and trustworthy.
 
 ## Tasks / Subtasks
 
-- [ ] Define progression command contract for XP grant from completion event (AC: 1, 2)
-  - [ ] Add request/response contract for processing a completion event by idempotency key and actor context.
-  - [ ] Define deterministic response payload fields that can be reused by follow-up streak/progress stories.
-  - [ ] Ensure API/app contract remains aligned with existing `/api/v1` + Problem Details conventions.
+- [x] Define progression command contract for XP grant from completion event (AC: 1, 2)
+  - [x] Add request/response contract for processing a completion event by idempotency key and actor context.
+  - [x] Define deterministic response payload fields that can be reused by follow-up streak/progress stories.
+  - [x] Ensure API/app contract remains aligned with existing `/api/v1` + Problem Details conventions.
 
-- [ ] Implement idempotent XP ledger write path in backend (AC: 1, 2)
-  - [ ] Add or extend persistence entities for XP ledger records keyed by completion event identity.
-  - [ ] Enforce database uniqueness constraints/indexes to prevent duplicate XP ledger writes during retries.
-  - [ ] Persist only server-authoritative values (no frontend-computed XP outcomes).
+- [x] Implement idempotent XP ledger write path in backend (AC: 1, 2)
+  - [x] Add or extend persistence entities for XP ledger records keyed by completion event identity.
+  - [x] Enforce database uniqueness constraints/indexes to prevent duplicate XP ledger writes during retries.
+  - [x] Persist only server-authoritative values (no frontend-computed XP outcomes).
 
-- [ ] Wire progression processing to completion event source of truth (AC: 1)
-  - [ ] Reuse `TaskCompletionEvent` data established in Story 2.4 as the trigger input for XP processing.
-  - [ ] Validate ownership and eligibility before writing XP records.
-  - [ ] Keep operation transactional so completion-to-ledger state cannot partially commit.
+- [x] Wire progression processing to completion event source of truth (AC: 1)
+  - [x] Reuse `TaskCompletionEvent` data established in Story 2.4 as the trigger input for XP processing.
+  - [x] Validate ownership and eligibility before writing XP records.
+  - [x] Keep operation transactional so completion-to-ledger state cannot partially commit.
 
-- [ ] Return deterministic replay result for duplicate submissions (AC: 2)
-  - [ ] If event was already processed, return original outcome snapshot rather than creating new rows.
-  - [ ] Ensure repeated calls are stable across transient retries/reconnects.
-  - [ ] Preserve traceability fields (event id, correlation/trace id) for support diagnostics.
+- [x] Return deterministic replay result for duplicate submissions (AC: 2)
+  - [x] If event was already processed, return original outcome snapshot rather than creating new rows.
+  - [x] Ensure repeated calls are stable across transient retries/reconnects.
+  - [x] Preserve traceability fields (event id, correlation/trace id) for support diagnostics.
 
-- [ ] Add regression-safe API and persistence tests for idempotency behavior (AC: 1, 2)
-  - [ ] Verify single eligible completion produces exactly one XP ledger entry.
-  - [ ] Verify repeated processing of same idempotency key returns consistent result and no duplicate grants.
-  - [ ] Verify ownership/auth failures and invalid inputs map to RFC 7807 Problem Details with stable `code` and `traceId`.
+- [x] Add regression-safe API and persistence tests for idempotency behavior (AC: 1, 2)
+  - [x] Verify single eligible completion produces exactly one XP ledger entry.
+  - [x] Verify repeated processing of same idempotency key returns consistent result and no duplicate grants.
+  - [x] Verify ownership/auth failures and invalid inputs map to RFC 7807 Problem Details with stable `code` and `traceId`.
 
-- [ ] Add frontend/service integration hooks needed for immediate momentum feedback (AC: 2)
-  - [ ] Expose deterministic completion outcome fields required by dashboard feedback components.
-  - [ ] Keep server state authoritative for XP/streak-related UI updates.
-  - [ ] Avoid introducing optimistic progression state that can diverge from backend truth.
+- [x] Add frontend/service integration hooks needed for immediate momentum feedback (AC: 2)
+  - [x] Expose deterministic completion outcome fields required by dashboard feedback components.
+  - [x] Keep server state authoritative for XP/streak-related UI updates.
+  - [x] Avoid introducing optimistic progression state that can diverge from backend truth.
 
 ## Dev Notes
 
@@ -109,11 +109,27 @@ GPT-5.3-Codex
 
 ### Completion Notes List
 
-- Story 3.1 drafted with implementation tasks, architecture guardrails, and test requirements for XP ledger idempotency.
-- Previous-story context (Story 2.4 completion event/idempotency baseline) captured to prevent parallel or conflicting implementations.
-- Sprint status updated to move Epic 3 into active execution and mark Story 3.1 as `ready-for-dev`.
+- Added idempotent XP ledger persistence (`XpLedgerEntries`) with SQL Server migration and uniqueness constraints keyed to completion-event identity.
+- Extended completion toggle contract to return deterministic progression outcome payload (`eventId`, `xpGranted`, replay flag, `idempotencyKey`, `traceId`).
+- Reused Story 2.4 `TaskCompletionEvent` path and added in-process idempotency lock for stable concurrent retries in test/runtime.
+- Updated backend integration tests and frontend task service/component hooks for deterministic momentum feedback without optimistic XP state.
+- Validation completed with passing API tests (`67`) and web tests (`59`).
 
 ### File List
 
+- task-tracker-api/TaskTracker.Api/Controllers/TasksController.cs
+- task-tracker-api/TaskTracker.Api/Features/Tasks/Contracts/TaskContracts.cs
+- task-tracker-api/TaskTracker.Api/Features/Tasks/Repositories/ITaskRepository.cs
+- task-tracker-api/TaskTracker.Api/Features/Tasks/Repositories/TaskRepository.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Entities/XpLedgerEntry.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/TaskTrackerDbContext.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Migrations/20260427181329_AddXpLedgerEntriesForStory31.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Migrations/20260427181329_AddXpLedgerEntriesForStory31.Designer.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Migrations/TaskTrackerDbContextModelSnapshot.cs
+- task-tracker-api/tests/TaskTracker.Api.Tests/Integration/AuthControllerTests.cs
+- task-tracker-api/tests/TaskTracker.Api.Tests/Integration/TasksControllerTests.cs
+- task-tracker-web/src/app/shared/models/task.models.ts
+- task-tracker-web/src/app/shared/services/task.service.ts
+- task-tracker-web/src/app/features/tasks/task-list.component.ts
+- task-tracker-web/src/app/features/tasks/task-list.component.spec.ts
 - _bmad-output/implementation-artifacts/3-1-build-xp-ledger-and-idempotent-completion-processing.md
-- _bmad-output/implementation-artifacts/sprint-status.yaml

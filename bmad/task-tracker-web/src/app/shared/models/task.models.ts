@@ -68,6 +68,33 @@ export interface ToggleTaskCompletionRequest {
   isCompleted: boolean;
 }
 
+export interface TaskCompletionProgression {
+  completionEventId: string | null;
+  xpLedgerEntryId: string | null;
+  xpGranted: number;
+  eligibleForXp: boolean;
+  idempotentReplay: boolean;
+  idempotencyKey: string;
+  traceId: string;
+  streak?: TaskCompletionStreak;
+}
+
+export type TaskStreakOutcome = 'continue' | 'reset' | 'restart';
+
+export interface TaskCompletionStreak {
+  outcome: TaskStreakOutcome;
+  currentStreakDays: number;
+  longestStreakDays: number;
+  timeZoneId: string;
+  evaluationWindowStartUtc: string;
+  evaluationWindowEndUtc: string;
+}
+
+export interface ToggleTaskCompletionResponse {
+  task: TaskResponse;
+  progression: TaskCompletionProgression;
+}
+
 export interface TaskResponse {
   id: string;
   title: string;

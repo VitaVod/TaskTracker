@@ -13,7 +13,12 @@ using TaskTracker.Api.Features.Auth.Email;
 using TaskTracker.Api.Features.Auth.Repositories;
 using TaskTracker.Api.Features.Auth.Security;
 using TaskTracker.Api.Features.Auth.Tokens;
+using TaskTracker.Api.Features.Leaderboards.Repositories;
+using TaskTracker.Api.Features.Progress.Repositories;
+using TaskTracker.Api.Features.SharedViews.Caching;
+using TaskTracker.Api.Features.Statistics.Repositories;
 using TaskTracker.Api.Features.Tasks.Repositories;
+using TaskTracker.Api.Features.Tasks.Streaks;
 using TaskTracker.Api.Infrastructure.Authorization;
 using TaskTracker.Api.Infrastructure.Persistence;
 
@@ -38,11 +43,33 @@ builder.Services.AddDbContext<TaskTrackerDbContext>(options =>
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<PasswordRecoveryOptions>(builder.Configuration.GetSection(PasswordRecoveryOptions.SectionName));
+builder.Services.Configure<SharedViewCacheOptions>(builder.Configuration.GetSection(SharedViewCacheOptions.SectionName));
+
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = "tasktracker:";
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<ITransactionalEmailService, LoggingTransactionalEmailService>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<ITaskRepository, TaskRepository>();
+builder.Services.AddScoped<IProgressRepository, ProgressRepository>();
+builder.Services.AddScoped<ILeaderboardRepository, LeaderboardRepository>();
+builder.Services.AddScoped<IGlobalStatisticsRepository, GlobalStatisticsRepository>();
+builder.Services.AddSingleton<ISharedViewCacheCoordinator, SharedViewCacheCoordinator>();
+builder.Services.AddSingleton<IStreakRuleEngine, StreakRuleEngine>();
 builder.Services.AddScoped<IAuthorizationHandler, RouteUserOwnershipHandler>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, TraceableAuthorizationMiddlewareResultHandler>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();

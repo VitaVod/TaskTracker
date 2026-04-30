@@ -4,6 +4,7 @@ import { ForgotPasswordComponent, LoginComponent, RegisterComponent, ResetPasswo
 import { DashboardComponent } from './features/dashboard/dashboard.component';
 import { AccountSettingsComponent } from './features/account/account-settings.component';
 import { CreateTaskComponent, TaskListComponent } from './features/tasks';
+import { LeaderboardComponent } from './features/leaderboards';
 
 export const routes: Routes = [
 	{
@@ -45,6 +46,11 @@ export const routes: Routes = [
 	{
 		path: 'tasks/new',
 		component: CreateTaskComponent,
+		canActivate: [authGuard]
+	},
+	{
+		path: 'leaderboards',
+		component: LeaderboardComponent,
 		canActivate: [authGuard]
 	},
 	{

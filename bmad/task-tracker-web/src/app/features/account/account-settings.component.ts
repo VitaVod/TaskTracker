@@ -29,7 +29,8 @@ export class AccountSettingsComponent implements OnInit {
 
   readonly settingsForm = this.formBuilder.nonNullable.group({
     timeZoneId: ['UTC', [Validators.required, Validators.maxLength(64)]],
-    locale: ['en-US', [Validators.required, Validators.pattern(/^[a-z]{2}(?:-[A-Z]{2})?$/), Validators.maxLength(16)]]
+    locale: ['en-US', [Validators.required, Validators.pattern(/^[a-z]{2}(?:-[A-Z]{2})?$/), Validators.maxLength(16)]],
+    leaderboardParticipationMode: ['hidden', [Validators.required]]
   });
 
   isLoading = true;
@@ -47,7 +48,11 @@ export class AccountSettingsComponent implements OnInit {
     this.accountService.getCurrentUser().subscribe({
       next: (account) => {
         this.profileForm.patchValue({ displayName: account.displayName });
-        this.settingsForm.patchValue({ timeZoneId: account.timeZoneId, locale: account.locale });
+        this.settingsForm.patchValue({
+          timeZoneId: account.timeZoneId,
+          locale: account.locale,
+          leaderboardParticipationMode: account.leaderboardParticipationMode
+        });
         this.hasLoadedAccount = true;
         this.isLoading = false;
       },
@@ -103,7 +108,12 @@ export class AccountSettingsComponent implements OnInit {
     }
 
     this.isSavingSettings = true;
-    this.accountService.updateSettings(this.settingsForm.getRawValue())
+    const settingsPayload = this.settingsForm.getRawValue();
+    this.accountService.updateSettings({
+      timeZoneId: settingsPayload.timeZoneId,
+      locale: settingsPayload.locale,
+      leaderboardParticipationMode: settingsPayload.leaderboardParticipationMode as 'public' | 'anonymous' | 'hidden'
+    })
       .pipe(finalize(() => { this.isSavingSettings = false; }))
       .subscribe({
         next: (response) => {

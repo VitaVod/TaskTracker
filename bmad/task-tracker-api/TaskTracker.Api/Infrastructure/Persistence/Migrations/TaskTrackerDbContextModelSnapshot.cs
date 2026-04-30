@@ -149,7 +149,7 @@ namespace TaskTracker.Api.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("OccurredAtUtc");
 
-                    b.HasIndex("OwnerId");
+                    b.HasIndex("OwnerId", "EventName", "OccurredAtUtc");
 
                     b.HasIndex("TaskId", "OwnerId", "IdempotencyKey")
                         .IsUnique();
@@ -226,6 +226,13 @@ namespace TaskTracker.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<string>("LeaderboardParticipationMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("hidden");
+
                     b.Property<string>("Locale")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -262,6 +269,100 @@ namespace TaskTracker.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
+            modelBuilder.Entity("TaskTracker.Api.Infrastructure.Persistence.Entities.UserStreakSnapshot", b =>
+                {
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CurrentStreakDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("EvaluationWindowEndUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("EvaluationWindowStartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastEvaluatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LastEvaluatedEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LastEvaluationTraceId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("LongestStreakDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("OwnerId");
+
+                    b.HasIndex("CurrentStreakDays", "OwnerId");
+
+                    b.ToTable("UserStreakSnapshots", (string)null);
+                });
+
+            modelBuilder.Entity("TaskTracker.Api.Infrastructure.Persistence.Entities.XpLedgerEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EventName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TaskCompletionEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("XpGranted")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskCompletionEventId")
+                        .IsUnique();
+
+                    b.HasIndex("TaskId");
+
+                    b.HasIndex("OwnerId", "OccurredAtUtc");
+
+                    b.HasIndex("OwnerId", "TaskId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("XpLedgerEntries", (string)null);
+                });
+
             modelBuilder.Entity("TaskTracker.Api.Infrastructure.Persistence.Entities.PasswordRecoveryToken", b =>
                 {
                     b.HasOne("TaskTracker.Api.Infrastructure.Persistence.Entities.User", null)
@@ -292,6 +393,36 @@ namespace TaskTracker.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TaskTracker.Api.Infrastructure.Persistence.Entities.UserStreakSnapshot", b =>
+                {
+                    b.HasOne("TaskTracker.Api.Infrastructure.Persistence.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TaskTracker.Api.Infrastructure.Persistence.Entities.XpLedgerEntry", b =>
+                {
+                    b.HasOne("TaskTracker.Api.Infrastructure.Persistence.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("TaskTracker.Api.Infrastructure.Persistence.Entities.TaskCompletionEvent", null)
+                        .WithMany()
+                        .HasForeignKey("TaskCompletionEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TaskTracker.Api.Infrastructure.Persistence.Entities.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

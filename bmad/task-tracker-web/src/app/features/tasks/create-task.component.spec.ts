@@ -37,11 +37,16 @@ describe('CreateTaskComponent', () => {
   });
 
   it('maps form values to create payload and navigates on success', async () => {
+    const futureLocalDueAt = new Date();
+    futureLocalDueAt.setDate(futureLocalDueAt.getDate() + 2);
+    futureLocalDueAt.setHours(18, 0, 0, 0);
+    const futureDueAtUtc = futureLocalDueAt.toISOString();
+
     taskService.createTask.and.returnValue(of({
       id: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
       title: 'Plan sprint backlog',
       description: 'Draft story priorities',
-      dueAtUtc: '2026-04-27T18:00:00Z',
+      dueAtUtc: futureDueAtUtc,
       priority: 'medium',
       category: 'work',
       isCompleted: false,
@@ -52,7 +57,7 @@ describe('CreateTaskComponent', () => {
     component.form.setValue({
       title: ' Plan sprint backlog ',
       description: ' Draft story priorities ',
-      dueAtUtc: '2026-04-27T18:00',
+      dueAtUtc: `${futureLocalDueAt.getFullYear()}-${`${futureLocalDueAt.getMonth() + 1}`.padStart(2, '0')}-${`${futureLocalDueAt.getDate()}`.padStart(2, '0')}T18:00`,
       priority: 'medium',
       category: 'work'
     });
@@ -72,7 +77,7 @@ describe('CreateTaskComponent', () => {
     expect(sentPayload.description).toBe('Draft story priorities');
     expect(sentPayload.category).toBe('work');
     expect(sentPayload.priority).toBe('medium');
-    expect(sentPayload.dueAtUtc).toMatch(/^2026-04-27T\d{2}:00:00.000Z$/);
+    expect(sentPayload.dueAtUtc).toBe(futureDueAtUtc);
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 
