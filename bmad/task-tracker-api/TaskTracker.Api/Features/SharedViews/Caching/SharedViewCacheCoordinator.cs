@@ -47,6 +47,34 @@ public class SharedViewCacheCoordinator(
         return (payload.TotalTasksCreated, payload.TotalTasksCompleted);
     }
 
+    public async Task InvalidateLeaderboardsAsync(
+        string invalidationReason,
+        string traceId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedReason = string.IsNullOrWhiteSpace(invalidationReason)
+            ? "unspecified"
+            : invalidationReason.Trim();
+
+        var opts = GetSanitizedOptions();
+        var keyPrefix = NormalizeKeyPrefix(opts.KeyPrefix);
+        var generationOptions = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(opts.GenerationTtlHours)
+        };
+
+        await cache.SetStringAsync(
+            GetGenerationKey(keyPrefix, "leaderboards"),
+            Guid.NewGuid().ToString("N"),
+            generationOptions,
+            cancellationToken);
+
+        logger.LogInformation(
+            "cache.invalidate scope=shared-views target=leaderboards reason={Reason} traceId={TraceId}",
+            normalizedReason,
+            traceId);
+    }
+
     public async Task InvalidateAfterCompletionCommitAsync(
         string idempotencyKey,
         string traceId,

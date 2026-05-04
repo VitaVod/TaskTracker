@@ -9,7 +9,7 @@ stepsCompleted:
   - 7
   - 8
 status: 'complete'
-completedAt: '2026-04-24'
+completedAt: '2026-05-04'
 lastStep: 8
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
@@ -19,7 +19,7 @@ inputDocuments:
 workflowType: 'architecture'
 project_name: 'bmad'
 user_name: 'Vitalii'
-date: '2026-04-24'
+date: '2026-05-04'
 ---
 
 # Architecture Decision Document
@@ -104,7 +104,11 @@ Initialization Commands:
 
 Frontend:
 npm install -g @angular/cli
-ng new task-tracker-web --routing --style scss --package-manager npm --strict
+ng new task-tracker-web --routing --style scss --package-manager npm --strict --skip-git
+
+Current workspace baseline note:
+- The repository currently runs Angular 20.x and .NET 9.0; keep implementation on this baseline for consistency.
+- Latest available upstream releases were verified during this refresh (Angular CLI 21.x and .NET 10), but adoption is deferred to a dedicated upgrade track.
 
 Backend:
 dotnet new webapi -n TaskTracker.Api -o task-tracker-api --framework net9.0
@@ -118,7 +122,7 @@ dotnet sln TaskTracker.sln add task-tracker-api/TaskTracker.Api.csproj
 ### Architectural Decisions Provided by Starter
 
 Language and Runtime:
-- Frontend: TypeScript with Angular 21 CLI conventions
+- Frontend: TypeScript with Angular 20 CLI conventions (workspace-aligned)
 - Backend: C# on ASP.NET Core .NET 9 Web API template
 
 Styling Solution:
@@ -440,6 +444,8 @@ TaskTracker/
       - Progression/
       - Leaderboards/
       - Stats/
+      - Notifications/
+      - Integrations/
       - Admin/
       - Support/
     - Behaviors/
@@ -525,6 +531,16 @@ TaskTracker/
           - services/
           - state/
         - stats/
+          - pages/
+          - components/
+          - services/
+          - state/
+        - notifications/
+          - pages/
+          - components/
+          - services/
+          - state/
+        - integrations/
           - pages/
           - components/
           - services/
@@ -623,6 +639,7 @@ Source organization:
 Test organization:
 - Backend unit/integration/contract test projects separated by purpose
 - Frontend component/service tests co-located, e2e tests under tests/e2e
+- Frontend API contract tests under task-tracker-web/tests/contract with versioned fixtures matching /api/v1 response schemas
 
 Asset organization:
 - Frontend static assets under task-tracker-web/src/assets
@@ -647,7 +664,7 @@ Deployment structure:
 ### Coherence Validation
 
 Decision compatibility:
-- Technology choices are coherent: Angular 21, ASP.NET Core .NET 9, EF Core 9, SQL Server 2022+.
+- Technology choices are coherent: Angular 20, ASP.NET Core .NET 9, EF Core 9, SQL Server 2022+.
 - No version-level contradictions were identified in the selected stack.
 - API, auth, data, and deployment choices are aligned with modular monolith boundaries.
 
@@ -693,8 +710,7 @@ Critical gaps:
 - None identified.
 
 Important gaps:
-- Add explicit Notifications and Integrations module folders in backend structure section for perfect FR-to-folder parity.
-- Add frontend contract-test placement notes tied to API versioning strategy.
+- None remaining for MVP implementation readiness.
 
 Nice-to-have gaps:
 - Add sample migration naming policy and rollback conventions.

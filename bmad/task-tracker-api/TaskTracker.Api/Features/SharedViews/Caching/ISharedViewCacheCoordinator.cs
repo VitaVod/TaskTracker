@@ -16,6 +16,11 @@ public interface ISharedViewCacheCoordinator
         Func<CancellationToken, Task<(long TotalTasksCreated, long TotalTasksCompleted)>> factory,
         CancellationToken cancellationToken);
 
+    Task InvalidateLeaderboardsAsync(
+        string invalidationReason,
+        string traceId,
+        CancellationToken cancellationToken);
+
     Task InvalidateAfterCompletionCommitAsync(
         string idempotencyKey,
         string traceId,

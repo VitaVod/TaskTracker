@@ -109,9 +109,9 @@ GPT-5.3-Codex
 
 ### Completion Notes List
 
-- Story 3.4 drafted with implementation tasks for XP feedback and streak continuity dashboard components.
+- Story 3.4 implemented for XP feedback and streak continuity dashboard components.
 - Story context anchored to existing progression contracts from Stories 3.1 to 3.3.
-- Sprint status updated to set Story 3.4 to `ready-for-dev`.
+- Sprint status updated to set Story 3.4 to `done`.
 - Implemented deterministic XP feedback toast and streak continuity card updates in task completion flow.
 - Added authoritative progress snapshot refreshes from existing progress APIs after completion outcomes.
 - Added screen-reader live announcements and reduced-motion-friendly feedback behavior.

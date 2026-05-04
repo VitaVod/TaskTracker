@@ -8,6 +8,7 @@ using TaskTracker.Api.Features.Account.Repositories;
 using TaskTracker.Api.Features.Auth.Security;
 using TaskTracker.Api.Features.Notifications.AccountEvents;
 using TaskTracker.Api.Features.Account.Validation;
+using TaskTracker.Api.Features.SharedViews.Caching;
 using TaskTracker.Api.Infrastructure.Authorization;
 using TaskTracker.Api.Infrastructure.Persistence.Entities;
 
@@ -21,6 +22,7 @@ public class AccountController(
     IPasswordHasher passwordHasher,
     IAccountEventNotificationService accountEventNotificationService,
     IAccountUpdateValidator accountUpdateValidator,
+    ISharedViewCacheCoordinator sharedViewCache,
     ILogger<AccountController> logger) : ControllerBase
 {
     private static readonly TimeSpan EmailChangeTokenLifetime = TimeSpan.FromMinutes(30);
@@ -121,11 +123,20 @@ public class AccountController(
             return NotFoundProblem("account.user.not_found", "User account could not be found.");
         }
 
+        var originalParticipationMode = user.LeaderboardParticipationMode;
         var changed = ApplySettingsPatch(user, validationResult);
         if (changed)
         {
             user.ModifiedAtUtc = DateTime.UtcNow;
             await accountRepository.SaveChangesAsync(cancellationToken);
+
+            if (originalParticipationMode != user.LeaderboardParticipationMode)
+            {
+                await sharedViewCache.InvalidateLeaderboardsAsync(
+                    $"account.settings.participation:{userId:N}",
+                    HttpContext.TraceIdentifier,
+                    cancellationToken);
+            }
         }
 
         logger.LogInformation("Settings update completed for user {UserId}. Changed: {Changed}. TraceId: {TraceId}", userId, changed, HttpContext.TraceIdentifier);

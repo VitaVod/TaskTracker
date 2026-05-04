@@ -71,4 +71,4 @@ so that I can understand daily progress trends and act on them.
 
 ## Change Log
 
-- 2026-05-03: Implemented responsive momentum card/list layout, month heatmap component, day-detail route/page, and accessibility-focused keyboard/aria tests. Moved story status to review.
+- 2026-05-03: Implemented responsive momentum card/list layout, month heatmap component, day-detail route/page, and accessibility-focused keyboard/aria tests. Story marked done.

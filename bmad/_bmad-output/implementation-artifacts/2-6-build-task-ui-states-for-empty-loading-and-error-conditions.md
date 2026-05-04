@@ -138,8 +138,8 @@ GPT-5.3-Codex
 
 ### Completion Notes List
 
-- Story 2.6 drafted with implementation context, constraints, and testing guidance for empty/loading/error state hardening.
-- Sprint status updated to set story 2.6 as `ready-for-dev`.
+- Story 2.6 implemented with deterministic empty/loading/error UI hardening and supporting tests.
+- Sprint status updated to set Story 2.6 to `done`.
 
 ### File List
 

@@ -159,6 +159,16 @@ export class AuthService {
     return this.getCurrentRole() === role;
   }
 
+  getCurrentUserId(): string | null {
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      return null;
+    }
+
+    const payload = this.decodeJwtPayload(token);
+    return this.extractUserIdClaim(payload);
+  }
+
   private storeTokens(response: { accessToken: string; refreshToken: string }): void {
     localStorage.setItem('accessToken', response.accessToken);
     localStorage.setItem('refreshToken', response.refreshToken);
@@ -196,6 +206,24 @@ export class AuthService {
     const claimTypesRole = payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];
     if (typeof claimTypesRole === 'string') {
       return claimTypesRole.trim().toLowerCase();
+    }
+
+    return null;
+  }
+
+  private extractUserIdClaim(payload: { [key: string]: unknown } | null): string | null {
+    if (!payload) {
+      return null;
+    }
+
+    const directSub = payload['sub'];
+    if (typeof directSub === 'string') {
+      return directSub.trim();
+    }
+
+    const claimTypesNameIdentifier = payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'];
+    if (typeof claimTypesNameIdentifier === 'string') {
+      return claimTypesNameIdentifier.trim();
     }
 
     return null;

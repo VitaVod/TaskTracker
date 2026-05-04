@@ -23,6 +23,7 @@ interface LeaderboardTypeOption {
 export class LeaderboardComponent {
   private readonly leaderboardService = inject(LeaderboardService);
   private readonly authService = inject(AuthService);
+  private readonly currentUserProfileHandle = this.resolveCurrentUserProfileHandle();
 
   readonly typeOptions: ReadonlyArray<LeaderboardTypeOption> = [
     {
@@ -115,6 +116,10 @@ export class LeaderboardComponent {
   }
 
   publicProfileRoute(entry: LeaderboardEntry): string[] {
+    if (this.currentUserProfileHandle && entry.publicProfileHandle?.toLowerCase() === this.currentUserProfileHandle) {
+      return ['/my-profile'];
+    }
+
     return ['/profile/public', entry.publicProfileHandle ?? ''];
   }
 
@@ -165,5 +170,19 @@ export class LeaderboardComponent {
         this.errorSupportText = supportParts.length > 0 ? `Support: ${supportParts.join(' | ')}` : '';
       }
     });
+  }
+
+  private resolveCurrentUserProfileHandle(): string | null {
+    const userId = this.authService.getCurrentUserId();
+    if (!userId) {
+      return null;
+    }
+
+    const normalized = userId.replace(/-/g, '').toLowerCase();
+    if (!/^[0-9a-f]{32}$/.test(normalized)) {
+      return null;
+    }
+
+    return `p-${normalized}`;
   }
 }

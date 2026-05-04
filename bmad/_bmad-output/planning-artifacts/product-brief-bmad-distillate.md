@@ -3,76 +3,84 @@ title: "Product Brief Distillate: bmad"
 type: llm-distillate
 source: "product-brief-bmad.md"
 created: "2026-04-23T10:31:43.1455667+03:00"
+updated: "2026-05-04T12:40:33.5678113+03:00"
 purpose: "Token-efficient context for downstream PRD creation"
 ---
 
 # Product Brief Distillate: Task Tracker
 
 ## Product Intent Snapshot
-- Product concept: A web-based Task Tracker that combines lightweight task management with gamified motivation loops.
-- Core user promise: Help people complete tasks more consistently by making progress visible and rewarding.
-- Primary behavior target: Increase task completion consistency, not just task capture.
-- Strategic framing: "Simple task management + motivating game loop" for individuals, not enterprise workflow complexity.
+- Product concept: Web-first task tracker that couples practical task execution with explicit motivation loops.
+- Core user promise: Increase completion consistency through immediate reinforcement (XP, streak continuity, progress movement).
+- Primary behavior target: Reduce execution decay after initial signup by making progress visible and emotionally meaningful.
+- Strategic framing: "Execution-first task management with measurable momentum."
+- Release posture: Planning artifacts indicate implementation-ready baseline for continued delivery.
 
 ## Requirements Hints
-- Functional requirement hint: Users must create, edit, delete, and complete tasks with low friction.
-- Functional requirement hint: Completing a task must award XP immediately and visibly.
-- Functional requirement hint: System must track streak continuity over time and show it in user-facing UI.
-- Functional requirement hint: System must provide global leaderboard views sorted by streak and by completed task count.
-- Functional requirement hint: System must provide a global statistics page containing total tasks created and total tasks completed across all users.
-- Functional requirement hint: Authentication and user accounts are required in MVP.
-- UX requirement hint: Core task flow should remain fast and uncluttered despite gamification features.
-- Analytics requirement hint: Instrument funnel events for create-first-task, complete-first-task, streak milestones, leaderboard views.
+- PRD coverage signal: 48 functional requirements are defined and mapped 100% to epics.
+- NFR coverage signal: 31 non-functional requirements define performance, security, reliability, accessibility, and integration expectations.
+- Functional requirement hint: task create/edit/delete/complete must remain low-friction and ownership-scoped.
+- Functional requirement hint: completion must trigger deterministic and idempotent XP updates.
+- Functional requirement hint: streak engine must apply explicit timezone and daily-boundary policy.
+- Functional requirement hint: leaderboards must expose privacy-safe identity fields only and preserve deterministic rank/tie-break behavior.
+- Functional requirement hint: global stats page must expose total tasks created/completed and remain responsive under growth.
+- Functional requirement hint: user/admin/support role capabilities must be enforced server-side and audited for privileged actions.
+- UX requirement hint: motivational overlays must not slow down the core task loop on mobile or desktop.
+- Analytics requirement hint: capture onboarding funnel, completion milestones, streak milestones, leaderboard engagement, and dispute-resolution traces.
 
 ## Technical Context
-- Platform direction provided by user: ASP.NET backend with Angular frontend.
-- Delivery shape: Web app first; mobile native explicitly deferred beyond MVP.
-- Architecture implication: Backend should expose APIs for tasks, XP transactions, streak computation, leaderboard queries, and global counters.
-- Architecture implication: Need durable event/state model for completion events to support anti-gaming checks and analytics.
-- Data integrity implication: Leaderboards require deterministic ranking rules and tie-break strategy.
-- Time logic implication: Streaks require explicit timezone policy, daily boundary rules, and potential grace-window handling.
+- Platform direction: ASP.NET Core backend + Angular frontend.
+- Data platform preference: SQL Server (SQL Server 2022+ / Azure SQL Database) via EF Core SQL Server provider.
+- Architecture baseline: modular monolith with domain boundaries for identity, tasks, progression, rankings/statistics, notifications, integrations, and operations.
+- API baseline: REST JSON under /api/v1 with standardized Problem Details error contracts.
+- Security baseline: JWT auth, least-privilege role policies, server-side ownership checks, immutable audit trails for admin/support actions.
+- Consistency baseline: idempotent completion processing, dedup keys, and deterministic event handling under retries/reconnects.
+- Performance baseline: cache-first read models for leaderboard/statistics with explicit invalidation tied to committed completion events.
+- Time semantics baseline: UTC event storage + user timezone projection for streak boundaries.
 
 ## Detailed User Scenarios
-- Scenario: User captures multiple daily tasks in the morning and checks them off through the day, seeing XP rise in real time.
-- Scenario: User misses tasks for several days today with existing tools and wants visible momentum signals to avoid drop-off.
-- Scenario: User compares progress to others on streak and completed-task leaderboards for accountability and motivation.
-- Scenario: User opens statistics page to see macro community progress, reinforcing a sense of participation and social proof.
-- Scenario: Friendly-competition user cohort (students/freelancers/peers) uses rankings as external motivation for consistency.
+- Scenario: Student/professional starts day planning in minutes, completes first task quickly, and receives immediate momentum signal.
+- Scenario: Freelancer with irregular schedule misses cutoff and needs recovery UX that restores agency instead of causing churn.
+- Scenario: User compares progress in streak and completion leaderboards while retaining control over public participation.
+- Scenario: Support role investigates "missing XP" or "incorrect streak" complaints using traceable event timeline and deterministic rule inspection.
+- Scenario: Admin role detects suspicious completion patterns and applies moderation without corrupting ranking trust.
+- Scenario: Integration consumer creates tasks via API while preserving same ownership, validation, and progression rules as UI.
 
 ## Competitive Intelligence
-- Asana positioning signal: Strong at team workflow/project operations; likely over-scoped for this product's personal-focus MVP.
-- Todoist positioning signal: Strong frictionless capture and organization; includes productivity trend visualization.
-- TickTick positioning signal: Broad all-in-one productivity toolkit, including statistics and habit/focus adjacent features.
-- Habitica positioning signal: Demonstrates that gamification (rewards, progress mechanics) can sustain engagement.
-- Product implication: Differentiate through focused, clean task flow plus meaningful progression and social comparison, not feature breadth.
+- Asana signal: broad team workflow depth; not the target for personal execution-first MVP.
+- Todoist signal: strongest mainstream positioning on frictionless capture and cross-platform sync.
+- TickTick signal: all-in-one productivity suite with extensive feature surface (calendar, habit, focus, reminders).
+- Habitica signal: deep gamification and community mechanics validate motivation-as-product pattern.
+- Positioning implication: win through a cleaner completion loop with stronger immediate reinforcement and trust-preserving social signals.
 
 ## Scope Signals
-- In MVP: Accounts/auth, task CRUD, completion flow, XP, streaks, leaderboards (streak + completions), global counters page.
-- Out MVP: Native mobile apps, team admin/workspace complexity, advanced AI recommendations, enterprise PM features, monetization experiments.
-- Scope discipline signal: Prefer behavior-changing core loop quality over expansion of feature surface area.
+- In MVP: authentication/session lifecycle, profile/settings baseline, ownership-scoped task lifecycle, deterministic XP + streak processing, leaderboards, global stats, essential email flows, role-policy baseline.
+- Out of MVP: native mobile apps, deep enterprise workspace controls, advanced AI planner/recommender, complex PM dependencies/resource planning.
+- Scope discipline signal: protect completion reliability and motivation quality before expanding horizontal feature surface.
 
 ## Rejected Ideas and Deferred Directions
-- Deferred direction: Enterprise-oriented project management depth (dependencies/resource planning/portfolio layers) is intentionally excluded to preserve product focus.
-- Deferred direction: AI-heavy prioritization and recommendation features are delayed until core behavior loop proves retention value.
-- Deferred direction: Native mobile apps are postponed to avoid splitting early implementation capacity.
-- Not provided in source discovery: No user-supplied prior documents, research artifacts, or legacy constraints to preserve.
+- Rejected/deferred: enterprise PM depth is intentionally excluded to avoid product dilution.
+- Rejected/deferred: AI-heavy recommendations postponed until behavior loop and retention are validated.
+- Rejected/deferred: native mobile postponed until web loop proves repeatable value.
+- Deferred architecture: multi-region active-active and external event bus extraction beyond MVP.
 
 ## Risks to Carry into PRD
-- Risk: Gamification novelty decay could reduce long-term engagement if progression lacks depth.
-- Risk: Public ranking can demotivate users with low scores without private/personalized framing options.
-- Risk: Feature creep may dilute core completion loop and delay delivery.
-- Risk: Leaderboard abuse (task spam, low-effort completions) can undermine trust without anti-gaming controls.
+- Risk: novelty decay if progression mechanics are not tuned with cohort data.
+- Risk: discouragement from social comparison without strong privacy/personal-best framing.
+- Risk: trust erosion if XP/streak outcomes are perceived as unfair or inconsistent.
+- Risk: leaderboard abuse from low-effort or scripted completions.
+- Risk: implementation drift from deterministic rules under retry/reconnect edge cases.
 
 ## Open Questions
-- XP model choice: Flat XP vs weighted by task difficulty/importance, and how to prevent reward inflation.
-- Streak model choice: Minimum daily completion threshold, grace period policy, and timezone source of truth.
-- Privacy model choice: Global-only leaderboard visibility vs opt-in participation and anonymization options.
-- Integrity model choice: Anti-cheat heuristics, suspicious-activity flags, and moderation/remediation process.
-- Onboarding model choice: Fastest path from signup to first meaningful completion and first streak moment.
-- Ranking model choice: Tie-break ordering (latest completion time, total XP, account age, etc.).
+- XP policy: flat vs weighted vs hybrid; anti-inflation controls and fairness perception.
+- Streak policy: completion threshold, grace-window behavior, and user-visible timezone semantics.
+- Privacy policy: opt-in defaults, aliasing strategy, and participation controls for public ranks.
+- Integrity policy: anti-gaming thresholds, automated flags, and manual moderation playbook boundaries.
+- Onboarding policy: shortest path from signup to first completed task and first multi-day streak.
+- Ranking policy: deterministic tie-break order and reconciliation process for disputes.
 
 ## Suggested PRD Starting Assumptions
-- Assumption: MVP should optimize for single-user daily use with optional public competition rather than collaborative team workflows.
-- Assumption: "First completed task" and "first 3-day streak" are primary early value moments to design around.
-- Assumption: Leaderboards and global stats should remain read-optimized and cached to keep UI responsive.
-- Assumption: Event logging from day one is mandatory to support retention tuning and reward-system balancing.
+- Assumption: MVP optimizes for single-user momentum with optional social comparison, not collaborative project operations.
+- Assumption: first completed task, first 3-day streak, and first leaderboard interaction are primary early value moments.
+- Assumption: leaderboard/global stats read paths must remain cache-optimized under growth.
+- Assumption: full event traceability from day one is mandatory for support explainability and trust protection.

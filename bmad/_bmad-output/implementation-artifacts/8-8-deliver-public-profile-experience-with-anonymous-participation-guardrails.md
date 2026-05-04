@@ -82,4 +82,4 @@ so that public stats are available only for opted-in participants.
 
 ## Change Log
 
-- 2026-05-03: Implemented privacy-safe public profile experience with deterministic anonymous guardrails across API and UI. Added integration/unit coverage and moved story status to review.
+- 2026-05-03: Implemented privacy-safe public profile experience with deterministic anonymous guardrails across API and UI. Added integration/unit coverage and marked story done.

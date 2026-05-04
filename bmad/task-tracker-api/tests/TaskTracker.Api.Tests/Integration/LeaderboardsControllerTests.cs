@@ -222,6 +222,67 @@ public class LeaderboardsControllerTests
     }
 
     [Fact]
+    public async Task UpdateSettings_ParticipationModeTransitions_AppearCorrectlyOnBothLeaderboardTabs()
+    {
+        await using var factory = new AuthTestFactory();
+        using var client = factory.CreateClient();
+
+        var caller = await RegisterAndLoginWithUserAsync(client, "leaderboard.mode.caller@example.com");
+        var participant = await RegisterAndLoginWithUserAsync(client, "leaderboard.mode.participant@example.com");
+
+        await factory.SetLeaderboardParticipationModeAsync(caller.UserId, LeaderboardParticipationMode.Anonymous);
+        await factory.SetUserDisplayNameAsync(participant.UserId, "Mode Pilot");
+        await factory.UpsertStreakSnapshotAsync(CreateSnapshot(caller.UserId, 1));
+        await factory.UpsertStreakSnapshotAsync(CreateSnapshot(participant.UserId, 33));
+        await SeedCompletedEventsAsync(factory, caller.UserId, 1);
+        await SeedCompletedEventsAsync(factory, participant.UserId, 7);
+
+        await PatchAccountSettingsAsync(client, participant.Tokens.AccessToken, new { leaderboardParticipationMode = "hidden" });
+
+        var hiddenStreak = await GetLeaderboardPayloadAsync(client, caller.Tokens.AccessToken, "streak", 1, 100, "hidden-streak");
+        var hiddenCompleted = await GetLeaderboardPayloadAsync(client, caller.Tokens.AccessToken, "completedTasks", 1, 100, "hidden-completed");
+
+        Assert.DoesNotContain(
+            hiddenStreak.GetProperty("items").EnumerateArray(),
+            item => string.Equals(item.GetProperty("publicIdentity").GetString(), ToAnonymousIdentity(participant.UserId), StringComparison.Ordinal)
+                    || string.Equals(item.GetProperty("publicProfileHandle").GetString(), ToPublicProfileHandle(participant.UserId), StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            hiddenCompleted.GetProperty("items").EnumerateArray(),
+            item => string.Equals(item.GetProperty("publicIdentity").GetString(), ToAnonymousIdentity(participant.UserId), StringComparison.Ordinal)
+                    || string.Equals(item.GetProperty("publicProfileHandle").GetString(), ToPublicProfileHandle(participant.UserId), StringComparison.Ordinal));
+
+        await PatchAccountSettingsAsync(client, participant.Tokens.AccessToken, new { leaderboardParticipationMode = "anonymous" });
+
+        var anonymousStreak = await GetLeaderboardPayloadAsync(client, caller.Tokens.AccessToken, "streak", 1, 100, "anonymous-streak");
+        var anonymousCompleted = await GetLeaderboardPayloadAsync(client, caller.Tokens.AccessToken, "completedTasks", 1, 100, "anonymous-completed");
+
+        Assert.Contains(
+            anonymousStreak.GetProperty("items").EnumerateArray(),
+            item => string.Equals(item.GetProperty("publicIdentity").GetString(), ToAnonymousIdentity(participant.UserId), StringComparison.Ordinal)
+                    && string.Equals(item.GetProperty("identityMode").GetString(), "anonymous", StringComparison.Ordinal));
+        Assert.Contains(
+            anonymousCompleted.GetProperty("items").EnumerateArray(),
+            item => string.Equals(item.GetProperty("publicIdentity").GetString(), ToAnonymousIdentity(participant.UserId), StringComparison.Ordinal)
+                    && string.Equals(item.GetProperty("identityMode").GetString(), "anonymous", StringComparison.Ordinal));
+
+        await PatchAccountSettingsAsync(client, participant.Tokens.AccessToken, new { leaderboardParticipationMode = "public" });
+
+        var publicStreak = await GetLeaderboardPayloadAsync(client, caller.Tokens.AccessToken, "streak", 1, 100, "public-streak");
+        var publicCompleted = await GetLeaderboardPayloadAsync(client, caller.Tokens.AccessToken, "completedTasks", 1, 100, "public-completed");
+
+        Assert.Contains(
+            publicStreak.GetProperty("items").EnumerateArray(),
+            item => string.Equals(item.GetProperty("publicIdentity").GetString(), "Mode Pilot", StringComparison.Ordinal)
+                    && string.Equals(item.GetProperty("identityMode").GetString(), "public", StringComparison.Ordinal)
+                    && string.Equals(item.GetProperty("publicProfileHandle").GetString(), ToPublicProfileHandle(participant.UserId), StringComparison.Ordinal));
+        Assert.Contains(
+            publicCompleted.GetProperty("items").EnumerateArray(),
+            item => string.Equals(item.GetProperty("publicIdentity").GetString(), "Mode Pilot", StringComparison.Ordinal)
+                    && string.Equals(item.GetProperty("identityMode").GetString(), "public", StringComparison.Ordinal)
+                    && string.Equals(item.GetProperty("publicProfileHandle").GetString(), ToPublicProfileHandle(participant.UserId), StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Get_WhenPublicModeHasNoDisplayName_UsesDeterministicAnonymousFallback()
     {
         await using var factory = new AuthTestFactory();
@@ -566,5 +627,19 @@ public class LeaderboardsControllerTests
     private static string ToPublicProfileHandle(Guid userId)
     {
         return $"p-{userId:N}";
+    }
+
+    private static async Task PatchAccountSettingsAsync(HttpClient client, string accessToken, object payload)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, "/api/v1/account/settings");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(payload);
+
+        var response = await client.SendAsync(request);
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            throw new Xunit.Sdk.XunitException($"Expected 200 OK but got {(int)response.StatusCode} {response.StatusCode}. Body: {body}");
+        }
     }
 }

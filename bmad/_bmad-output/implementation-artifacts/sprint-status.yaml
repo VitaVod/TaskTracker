@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-24T14:14:44+03:00
-last_updated: 2026-05-03T19:36:00+03:00
+last_updated: 2026-05-04T12:00:00+03:00
 project: bmad
 project_key: NOKEY
 tracking_system: file-system
@@ -51,7 +51,7 @@ development_status:
   1-6-implement-password-recovery-and-critical-transactional-email: done
   epic-1-retrospective: done
 
-  epic-2: in-progress
+  epic-2: done
   2-1-create-task-domain-and-api-contracts: done
   2-2-build-task-list-views-for-active-and-completed-items: done
   2-3-implement-task-update-and-organizational-attributes: done
@@ -60,7 +60,7 @@ development_status:
   2-6-build-task-ui-states-for-empty-loading-and-error-conditions: done
   epic-2-retrospective: done
 
-  epic-3: in-progress
+  epic-3: done
   3-1-build-xp-ledger-and-idempotent-completion-processing: done
   3-2-implement-streak-rule-engine-with-timezone-policy: done
   3-3-expose-progress-apis-for-xp-streak-and-trend-snapshots: done
@@ -68,7 +68,7 @@ development_status:
   3-5-implement-momentum-summary-and-historical-progress-view: done
   epic-3-retrospective: done
 
-  epic-4: in-progress
+  epic-4: done
   4-1-implement-streak-and-completed-task-leaderboard-read-models: done
   4-2-implement-privacy-safe-public-identity-and-participation-controls: done
   4-3-build-global-statistics-endpoints-and-ui-panels: done

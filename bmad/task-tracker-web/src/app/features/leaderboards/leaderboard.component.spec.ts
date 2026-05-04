@@ -15,8 +15,9 @@ describe('LeaderboardComponent', () => {
   beforeEach(async () => {
     leaderboardService = jasmine.createSpyObj<LeaderboardService>('LeaderboardService', ['getLeaderboard']);
     leaderboardService.getLeaderboard.and.returnValue(of(buildResponse('streak', 1, true)));
-    authService = jasmine.createSpyObj<AuthService>('AuthService', ['hasRole']);
+    authService = jasmine.createSpyObj<AuthService>('AuthService', ['hasRole', 'getCurrentUserId']);
     authService.hasRole.and.returnValue(false);
+    authService.getCurrentUserId.and.returnValue(null);
 
     await TestBed.configureTestingModule({
       imports: [LeaderboardComponent],
@@ -123,6 +124,19 @@ describe('LeaderboardComponent', () => {
 
     expect(linkedIdentity?.getAttribute('href')).toContain('/profile/public/p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     expect(anonymousIdentity?.tagName.toLowerCase()).toBe('p');
+  });
+
+  it('routes to my profile when the clicked public entry belongs to the current user', () => {
+    authService.getCurrentUserId.and.returnValue('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+
+    fixture = TestBed.createComponent(LeaderboardComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const linkedIdentity = compiled.querySelector('a.identity-name');
+
+    expect(linkedIdentity?.getAttribute('href')).toContain('/my-profile');
   });
 
   it('renders movement and pagination accessibility labels', () => {

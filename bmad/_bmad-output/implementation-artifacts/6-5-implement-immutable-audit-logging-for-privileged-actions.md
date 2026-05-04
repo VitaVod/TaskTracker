@@ -1,6 +1,6 @@
 # Story 6.5: Implement Immutable Audit Logging for Privileged Actions
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

@@ -1,58 +1,60 @@
-<main class="public-profile-page">
-  <section class="public-profile-shell">
+<main class="preview-page">
+  <section class="preview-shell">
     <header>
       <p class="eyebrow">TaskTracker / Public profile</p>
-      <h1>Participant profile</h1>
+      <h1>How Others See This Profile</h1>
+      <p class="subtitle">This page uses the same preview layout as My Profile for a consistent experience.</p>
       <a routerLink="/leaderboards" class="back-link">Back to leaderboards</a>
     </header>
 
     @if (state === 'loading') {
       <section class="state-card" aria-live="polite" aria-busy="true">
-        <p class="state-title">Loading participant profile...</p>
+        <p>Loading participant profile...</p>
       </section>
     } @else if (state === 'error') {
       <section class="state-card" role="alert" aria-live="assertive">
-        <p class="state-title">{{ errorMessage }}</p>
+        <p>{{ errorMessage }}</p>
         @if (errorSupportText) {
-          <p class="state-meta">{{ errorSupportText }}</p>
+          <p class="metric-meta">{{ errorSupportText }}</p>
         }
-        <button type="button" class="action-button" (click)="retry()">Retry</button>
+        <button type="button" (click)="retry()">Retry</button>
       </section>
     } @else if (state === 'anonymous') {
-      <section class="state-card" aria-live="polite">
-        <p class="state-title">Anonymous participant</p>
-        <p class="state-meta">{{ profile?.message ?? 'This participant keeps leaderboard participation anonymous. Public statistics are unavailable.' }}</p>
-      </section>
+      <article class="preview-card" aria-live="polite">
+        <p class="metric-label">Public identity</p>
+        <p class="identity">Anonymous participant</p>
+        <p class="metric-meta">Visibility mode: Anonymous alias</p>
+        <p class="hint">{{ profile?.message ?? 'This participant keeps leaderboard participation anonymous. Public statistics are unavailable.' }}</p>
+      </article>
     } @else if (profile?.statistics; as stats) {
-      <section class="profile-card" aria-live="polite">
-        <div class="identity-header">
-          <span class="avatar-chip" aria-hidden="true">{{ profile?.avatarMarker }}</span>
-          <h2>{{ profile?.publicIdentity }}</h2>
+      <article class="preview-card" aria-live="polite">
+        <p class="metric-label">Public identity</p>
+        <p class="identity">{{ profile?.publicIdentity }}</p>
+        <p class="metric-meta">Visibility mode: Public display name</p>
+
+        <div class="metrics-grid">
+          <section>
+            <p class="metric-label">Current streak</p>
+            <p class="metric-value">{{ stats.currentStreakDays }} day(s)</p>
+          </section>
+          <section>
+            <p class="metric-label">Longest streak</p>
+            <p class="metric-value">{{ stats.longestStreakDays }} day(s)</p>
+          </section>
+          <section>
+            <p class="metric-label">Completed tasks</p>
+            <p class="metric-value">{{ stats.completedTaskCount }}</p>
+          </section>
+          <section>
+            <p class="metric-label">Total XP</p>
+            <p class="metric-value">{{ stats.totalXp }}</p>
+          </section>
         </div>
 
-        <dl class="stats-grid">
-          <div>
-            <dt>Current streak</dt>
-            <dd>{{ stats.currentStreakDays }} day(s)</dd>
-          </div>
-          <div>
-            <dt>Longest streak</dt>
-            <dd>{{ stats.longestStreakDays }} day(s)</dd>
-          </div>
-          <div>
-            <dt>Completed tasks</dt>
-            <dd>{{ stats.completedTaskCount }}</dd>
-          </div>
-          <div>
-            <dt>Total XP</dt>
-            <dd>{{ stats.totalXp }}</dd>
-          </div>
-        </dl>
-
         @if (stats.lastCompletedAtUtc) {
-          <p class="last-activity">Last completion: {{ stats.lastCompletedAtUtc | date: 'medium' }}</p>
+          <p class="hint">Last completion: {{ stats.lastCompletedAtUtc | date: 'medium' }}</p>
         }
-      </section>
+      </article>
     }
   </section>
 </main>
