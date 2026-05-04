@@ -205,7 +205,9 @@
                           (click)="toggleCompletion(task, !task.isCompleted)">
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
-                        <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
+                        @if (!task.isCompleted) {
+                          <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
+                        }
                         <button
                           type="button"
                           class="delete-button"
@@ -217,7 +219,7 @@
                       </div>
                     </div>
 
-                    @if (isEditing(task)) {
+                    @if (isEditing(task) && !task.isCompleted) {
                       <form class="edit-form" [formGroup]="editForm" (ngSubmit)="submitEdit()" novalidate>
                         <label for="edit-title">Title</label>
                         <input id="edit-title" type="text" formControlName="title" maxlength="160" />
@@ -377,11 +379,13 @@
                           (click)="toggleCompletion(task, !task.isCompleted)">
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
-                        <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
+                        @if (!task.isCompleted) {
+                          <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
+                        }
                       </div>
                     </div>
 
-                    @if (isEditing(task)) {
+                    @if (isEditing(task) && !task.isCompleted) {
                       <form class="edit-form" [formGroup]="editForm" (ngSubmit)="submitEdit()" novalidate>
                         <label for="edit-title">Title</label>
                         <input id="edit-title" type="text" formControlName="title" maxlength="160" />
@@ -542,7 +546,9 @@
                           (click)="toggleCompletion(task, !task.isCompleted)">
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
-                        <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
+                        @if (!task.isCompleted) {
+                          <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
+                        }
                         @if (!task.isCompleted) {
                           <button
                             type="button"
@@ -556,7 +562,7 @@
                       </div>
                     </div>
 
-                    @if (isEditing(task)) {
+                    @if (isEditing(task) && !task.isCompleted) {
                       <form class="edit-form" [formGroup]="editForm" (ngSubmit)="submitEdit()" novalidate>
                         <label for="edit-title">Title</label>
                         <input id="edit-title" type="text" formControlName="title" maxlength="160" />

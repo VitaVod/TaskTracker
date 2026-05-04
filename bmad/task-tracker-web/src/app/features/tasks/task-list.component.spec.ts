@@ -485,6 +485,38 @@ describe('TaskListComponent', () => {
     expect(taskService.getTasks).toHaveBeenCalledWith('completed', undefined);
     expect(component.selectedFilter).toBe('completed');
     expect(component.liveMessage).toContain('completed');
+    const completedEditButton = fixture.nativeElement.querySelector('button[aria-label="Edit task Completed item"]') as HTMLButtonElement | null;
+    expect(completedEditButton).toBeNull();
+  });
+
+  it('does not allow entering edit mode for completed tasks', () => {
+    const completedTask = {
+      ...component.tasks[0],
+      id: 'completed-locked',
+      title: 'Completed lock',
+      isCompleted: true
+    };
+
+    component.startEdit(completedTask);
+
+    expect(component.editingTaskId).toBeNull();
+  });
+
+  it('does not render edit form for completed tasks even if editingTaskId is stale', () => {
+    const completedTask = {
+      ...component.tasks[0],
+      id: 'completed-stale',
+      title: 'Completed stale',
+      isCompleted: true
+    };
+
+    component.selectedFilter = 'completed';
+    component.tasks = [completedTask];
+    component.editingTaskId = completedTask.id;
+    fixture.detectChanges();
+
+    const editForm = fixture.nativeElement.querySelector('.edit-form') as HTMLFormElement | null;
+    expect(editForm).toBeNull();
   });
 
   it('toggles tab-switch animation phase when changing task-state tabs', () => {
@@ -592,8 +624,20 @@ describe('TaskListComponent', () => {
     expect(component.editForm.getRawValue().title).toBe('Potential new title');
   });
 
+  it('blocks submitEdit when the editing task is already completed', () => {
+    const task = component.tasks[0];
+    component.startEdit(task);
+    component.tasks = [{ ...task, isCompleted: true }];
+
+    component.submitEdit();
+
+    expect(taskService.updateTask).not.toHaveBeenCalled();
+    expect(component.editingTaskId).toBeNull();
+  });
+
   it('toggles completion and updates summary counts from server-confirmed result', () => {
     const task = component.tasks[0];
+    component.startEdit(task);
 
     component.toggleCompletion(task, true);
 
@@ -601,6 +645,7 @@ describe('TaskListComponent', () => {
     expect(component.tasks[0].isCompleted).toBeTrue();
     expect(component.activeCount).toBe(0);
     expect(component.completedCount).toBe(1);
+    expect(component.editingTaskId).toBeNull();
     expect(component.liveMessage).toContain('+10 XP awarded');
   });
 

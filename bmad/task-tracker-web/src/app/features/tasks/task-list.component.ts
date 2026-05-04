@@ -371,6 +371,10 @@ export class TaskListComponent implements OnInit {
   }
 
   startEdit(task: TaskResponse): void {
+    if (task.isCompleted) {
+      return;
+    }
+
     this.editingTaskId = task.id;
     this.saveErrorMessage = '';
     this.saveErrorCode = undefined;
@@ -390,6 +394,10 @@ export class TaskListComponent implements OnInit {
   }
 
   toggleEdit(task: TaskResponse): void {
+    if (task.isCompleted) {
+      return;
+    }
+
     if (this.isEditing(task)) {
       this.cancelEdit();
       return;
@@ -419,6 +427,12 @@ export class TaskListComponent implements OnInit {
 
   submitEdit(): void {
     if (this.editingTaskId === null) {
+      return;
+    }
+
+    const editingTask = this.tasks.find((task) => task.id === this.editingTaskId);
+    if (!editingTask || editingTask.isCompleted) {
+      this.cancelEdit();
       return;
     }
 
@@ -663,6 +677,7 @@ export class TaskListComponent implements OnInit {
         }
 
         this.tasks = response.items;
+        this.clearInvalidEditingState();
         this.activeCount = response.summary.activeCount;
         this.completedCount = response.summary.completedCount;
         this.refreshUiStateFromTasks();
@@ -719,6 +734,10 @@ export class TaskListComponent implements OnInit {
   }
 
   private reconcileTaskAfterCompletionToggle(previousTask: TaskResponse, updatedTask: TaskResponse): void {
+    if (!previousTask.isCompleted && updatedTask.isCompleted && this.editingTaskId === updatedTask.id) {
+      this.cancelEdit();
+    }
+
     if (!previousTask.isCompleted && updatedTask.isCompleted) {
       this.activeCount = Math.max(0, this.activeCount - 1);
       this.completedCount += 1;
@@ -785,6 +804,17 @@ export class TaskListComponent implements OnInit {
     }
 
     this.uiState = { kind: 'ready', tasks: this.tasks };
+  }
+
+  private clearInvalidEditingState(): void {
+    if (this.editingTaskId === null) {
+      return;
+    }
+
+    const editedTask = this.tasks.find((task) => task.id === this.editingTaskId);
+    if (!editedTask || editedTask.isCompleted) {
+      this.cancelEdit();
+    }
   }
 
   private problemSupportText(code?: string, traceId?: string): string {
