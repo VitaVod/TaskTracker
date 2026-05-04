@@ -1,3 +1,141 @@
+.app-header {
+	position: sticky;
+	top: 0;
+	z-index: 1000;
+	padding: 0.7rem 1rem;
+	background: rgba(7, 16, 30, 0.88);
+	backdrop-filter: blur(8px);
+	border-bottom: 1px solid rgba(127, 208, 255, 0.24);
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.7rem;
+}
+
+.app-brand {
+	justify-self: start;
+	padding: 0.38rem 0.58rem;
+	border-radius: 0.5rem;
+	border: 1px solid rgba(127, 208, 255, 0.3);
+	background: rgba(11, 24, 40, 0.75);
+	color: #ecf6ff;
+	text-decoration: none;
+	font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+	font-size: 0.86rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+}
+
+.app-brand:hover,
+.app-brand:focus-visible {
+	border-color: #9bf6bd;
+	outline: none;
+}
+
+.app-tabs {
+	display: flex;
+	justify-content: center;
+	gap: 0.55rem;
+	overflow-x: auto;
+	padding-bottom: 0.15rem;
+	scrollbar-width: thin;
+}
+
+.logout-button {
+	justify-self: end;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.38rem;
+	padding: 0.42rem 0.8rem;
+	border-radius: 999px;
+	border: 1px solid rgba(127, 208, 255, 0.35);
+	background: rgba(15, 29, 49, 0.8);
+	color: #ecf6ff;
+	font-weight: 700;
+	cursor: pointer;
+	transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.logout-button:hover,
+.logout-button:focus-visible {
+	border-color: #9bf6bd;
+	outline: none;
+}
+
+.logout-button:disabled {
+	opacity: 0.7;
+	cursor: default;
+}
+
+.logout-icon {
+	width: 1rem;
+	height: 1rem;
+	display: inline-flex;
+}
+
+.logout-icon svg {
+	width: 100%;
+	height: 100%;
+	fill: currentColor;
+}
+
+.app-tab {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	padding: 0.42rem 0.8rem;
+	border-radius: 999px;
+	border: 1px solid rgba(127, 208, 255, 0.25);
+	background: rgba(15, 29, 49, 0.8);
+	color: #c2d8e7;
+	text-decoration: none;
+	font-weight: 600;
+	white-space: nowrap;
+	transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.app-tab-icon {
+	width: 1.15rem;
+	height: 1.15rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 0.68rem;
+	font-weight: 700;
+	border-radius: 999px;
+	border: 1px solid rgba(127, 208, 255, 0.35);
+	background: rgba(11, 24, 40, 0.85);
+	color: #9fd7ff;
+}
+
+.app-tab:hover,
+.app-tab:focus-visible {
+	border-color: #9bf6bd;
+	color: #ecf6ff;
+	outline: none;
+}
+
+.app-tab.active {
+	border-color: #7fd0ff;
+	background: linear-gradient(120deg, rgba(99, 230, 248, 0.32), rgba(155, 246, 189, 0.2));
+	color: #ecf6ff;
+}
+
+@media (max-width: 980px) {
+	.app-header {
+		grid-template-columns: 1fr;
+	}
+
+	.app-brand {
+		justify-self: center;
+	}
+
+	.logout-button {
+		justify-self: center;
+	}
+}
+
 .loading-overlay {
 	position: fixed;
 	inset: 0;

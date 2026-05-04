@@ -6,4 +6,6 @@ public static class AppPolicies
     public const string AdminOnly = "AdminOnly";
     public const string SupportOnly = "SupportOnly";
     public const string AccountOwnerOrPrivileged = "AccountOwnerOrPrivileged";
+    public const string IntegrationAuthenticated = "IntegrationAuthenticated";
+    public const string IntegrationTaskCreateSync = "IntegrationTaskCreateSync";
 }

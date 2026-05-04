@@ -32,6 +32,40 @@
               {{ isSavingProfile ? 'Saving profile...' : 'Save profile' }}
             </button>
           </form>
+
+          <hr class="panel-divider" />
+
+          <h3>Secure email change</h3>
+          <form [formGroup]="emailChangeForm" (ngSubmit)="requestEmailChange()" novalidate>
+            <label for="newEmail">New email address</label>
+            <input id="newEmail" type="email" formControlName="newEmail" maxlength="320" autocomplete="email" />
+            @if (emailChangeForm.controls.newEmail.invalid && emailChangeForm.controls.newEmail.touched) {
+              <p class="field-error">Enter a valid email address.</p>
+            }
+            @if (fieldErrorFor('email-change', 'newEmail')) {
+              <p class="field-error">{{ fieldErrorFor('email-change', 'newEmail') }}</p>
+            }
+
+            <label for="currentPassword">Current password</label>
+            <input id="currentPassword" type="password" formControlName="currentPassword" maxlength="128" autocomplete="current-password" />
+            @if (emailChangeForm.controls.currentPassword.invalid && emailChangeForm.controls.currentPassword.touched) {
+              <p class="field-error">Enter your current password to confirm this change.</p>
+            }
+            @if (fieldErrorFor('email-change', 'currentPassword')) {
+              <p class="field-error">{{ fieldErrorFor('email-change', 'currentPassword') }}</p>
+            }
+
+            @if (emailChangeError) {
+              <p class="api-error">{{ emailChangeError }}</p>
+            }
+            @if (emailChangeMessage) {
+              <p class="success">{{ emailChangeMessage }}</p>
+            }
+
+            <button type="submit" [disabled]="isSubmittingEmailChange || !hasLoadedAccount">
+              {{ isSubmittingEmailChange ? 'Submitting request...' : 'Request email change' }}
+            </button>
+          </form>
         </article>
 
         <article class="panel">
@@ -39,6 +73,7 @@
           <form [formGroup]="settingsForm" (ngSubmit)="saveSettings()" novalidate>
             <label for="timeZoneId">Time zone</label>
             <input id="timeZoneId" type="text" formControlName="timeZoneId" maxlength="64" />
+            <p class="field-hint">Used to evaluate streak windows and due dates in your local day.</p>
             @if (settingsForm.controls.timeZoneId.invalid && settingsForm.controls.timeZoneId.touched) {
               <p class="field-error">Provide a valid time zone identifier like UTC or Europe/Kyiv.</p>
             }
@@ -48,6 +83,7 @@
 
             <label for="locale">Locale</label>
             <input id="locale" type="text" formControlName="locale" maxlength="16" />
+            <p class="field-hint">Controls date, number, and language formatting in your UI.</p>
             @if (settingsForm.controls.locale.invalid && settingsForm.controls.locale.touched) {
               <p class="field-error">Locale must use ll or ll-RR format (for example en-US).</p>
             }
@@ -55,12 +91,46 @@
               <p class="field-error">{{ fieldErrorFor('settings', 'locale') }}</p>
             }
 
-            <label for="leaderboardParticipationMode">Leaderboard participation</label>
-            <select id="leaderboardParticipationMode" formControlName="leaderboardParticipationMode">
-              <option value="hidden">Hidden from leaderboard</option>
-              <option value="anonymous">Anonymous alias</option>
-              <option value="public">Public display name</option>
-            </select>
+            <fieldset class="participation-group" aria-describedby="leaderboardParticipationHelp">
+              <legend>Leaderboard participation</legend>
+              <p id="leaderboardParticipationHelp" class="field-hint">Choose how your identity appears in public rankings.</p>
+
+              <label class="radio-option" for="participationHidden">
+                <input
+                  id="participationHidden"
+                  type="radio"
+                  formControlName="leaderboardParticipationMode"
+                  value="hidden" />
+                <span>
+                  <strong>Hidden</strong>
+                  <small>Exclude your account from leaderboard lists.</small>
+                </span>
+              </label>
+
+              <label class="radio-option" for="participationAnonymous">
+                <input
+                  id="participationAnonymous"
+                  type="radio"
+                  formControlName="leaderboardParticipationMode"
+                  value="anonymous" />
+                <span>
+                  <strong>Anonymous alias</strong>
+                  <small>Stay in rankings with a generated alias.</small>
+                </span>
+              </label>
+
+              <label class="radio-option" for="participationPublic">
+                <input
+                  id="participationPublic"
+                  type="radio"
+                  formControlName="leaderboardParticipationMode"
+                  value="public" />
+                <span>
+                  <strong>Public display name</strong>
+                  <small>Show your display name in leaderboard results.</small>
+                </span>
+              </label>
+            </fieldset>
             @if (fieldErrorFor('settings', 'leaderboardParticipationMode')) {
               <p class="field-error">{{ fieldErrorFor('settings', 'leaderboardParticipationMode') }}</p>
             }
@@ -76,6 +146,7 @@
             </button>
           </form>
         </article>
+
       </div>
     }
   </section>

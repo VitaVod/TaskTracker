@@ -7,7 +7,17 @@ public sealed record LeaderboardEntry(
     string PublicIdentity,
     LeaderboardIdentityMode IdentityMode,
     string AvatarMarker,
-    int MetricValue);
+    int MetricValue,
+    string? PublicProfileHandle);
+
+public sealed record PublicProfileReadModel(
+    string PublicIdentity,
+    string AvatarMarker,
+    int CurrentStreakDays,
+    int LongestStreakDays,
+    int CompletedTaskCount,
+    int TotalXp,
+    DateTime? LastCompletedAtUtc);
 
 public sealed record LeaderboardPage(
     LeaderboardType Type,
@@ -15,6 +25,23 @@ public sealed record LeaderboardPage(
     int PageSize,
     int TotalCount,
     IReadOnlyCollection<LeaderboardEntry> Items);
+
+public sealed record SuspiciousActivityCase(
+    string CaseId,
+    string PublicIdentity,
+    LeaderboardIdentityMode IdentityMode,
+    string AnomalyType,
+    string SignalSummary,
+    int Severity,
+    DateTime DetectedAtUtc,
+    DateTime? LastActivityAtUtc,
+    string CorrelationRef);
+
+public sealed record SuspiciousActivityCasePage(
+    int Page,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyCollection<SuspiciousActivityCase> Items);
 
 public interface ILeaderboardRepository
 {
@@ -24,5 +51,19 @@ public interface ILeaderboardRepository
         LeaderboardType type,
         int page,
         int pageSize,
+        CancellationToken cancellationToken);
+
+    Task<PublicProfileReadModel?> GetPublicProfileAsync(
+        string profileHandle,
+        CancellationToken cancellationToken);
+
+    Task<SuspiciousActivityCasePage> GetSuspiciousActivityCasesAsync(
+        string? anomalyType,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken);
+
+    Task<SuspiciousActivityCase?> GetSuspiciousActivityCaseByIdAsync(
+        string caseId,
         CancellationToken cancellationToken);
 }

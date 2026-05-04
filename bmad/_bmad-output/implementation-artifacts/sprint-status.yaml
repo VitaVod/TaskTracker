@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-24T14:14:44+03:00
-last_updated: 2026-04-30T14:45:00+03:00
+last_updated: 2026-05-03T19:36:00+03:00
 project: bmad
 project_key: NOKEY
 tracking_system: file-system
@@ -76,26 +76,38 @@ development_status:
   4-5-build-leaderboard-ux-components-and-responsive-behaviors: done
   epic-4-retrospective: done
 
-  epic-5: in-progress
-  5-1-implement-notification-preferences-domain-and-api: ready-for-dev
-  5-2-implement-reminder-email-pipeline-for-pending-tasks: backlog
-  5-3-build-missed-day-recovery-experience-and-guidance: backlog
-  5-4-implement-progress-explanation-messages-for-outcome-transparency: backlog
-  5-5-integrate-transactional-notification-flows-with-account-events: backlog
-  epic-5-retrospective: optional
+  epic-5: done
+  5-1-implement-notification-preferences-domain-and-api: done
+  5-2-implement-reminder-email-pipeline-for-pending-tasks: done
+  5-3-build-missed-day-recovery-experience-and-guidance: done
+  5-4-implement-progress-explanation-messages-for-outcome-transparency: done
+  5-5-integrate-transactional-notification-flows-with-account-events: done
+  epic-5-retrospective: done
 
-  epic-6: backlog
-  6-1-build-admin-suspicious-activity-review-workspace: backlog
-  6-2-implement-moderation-actions-with-safety-guards: backlog
-  6-3-build-support-diagnostic-view-for-user-progress-disputes: backlog
-  6-4-implement-event-timeline-and-correlation-based-troubleshooting: backlog
-  6-5-implement-immutable-audit-logging-for-privileged-actions: backlog
-  epic-6-retrospective: optional
+  epic-6: done
+  6-1-build-admin-suspicious-activity-review-workspace: done
+  6-2-implement-moderation-actions-with-safety-guards: done
+  6-3-build-support-diagnostic-view-for-user-progress-disputes: done
+  6-4-implement-event-timeline-and-correlation-based-troubleshooting: done
+  6-5-implement-immutable-audit-logging-for-privileged-actions: done
+  epic-6-retrospective: done
 
-  epic-7: backlog
-  7-1-implement-integration-authentication-and-scoped-credentials: backlog
-  7-2-implement-task-create-sync-endpoint-for-integrations: backlog
-  7-3-implement-idempotent-retry-handling-for-integration-events: backlog
-  7-4-add-integration-observability-and-failure-recovery: backlog
-  epic-7-retrospective: optional
+  epic-7: done
+  7-1-implement-integration-authentication-and-scoped-credentials: done
+  7-2-implement-task-create-sync-endpoint-for-integrations: done
+  7-3-implement-idempotent-retry-handling-for-integration-events: done
+  7-4-add-integration-observability-and-failure-recovery: done
+  epic-7-retrospective: done
+
+  epic-8: done
+  8-1-enforce-progression-integrity-for-task-state-and-deletion-rules: done
+  8-2-extend-task-model-with-difficulty-and-planning-metadata: done
+  8-3-build-level-thresholds-and-multi-band-xp-progress-bar: done
+  8-4-add-weekly-recovery-token-and-near-miss-streak-nudges: done
+  8-5-redesign-momentum-summary-with-daily-detail-and-month-heatmap: done
+  8-6-improve-task-and-dashboard-ux-navigation-and-empty-states: done
+  8-7-expand-profile-and-preferences-with-secure-email-change: done
+  8-8-deliver-public-profile-experience-with-anonymous-participation-guardrails: done
+  8-9-harden-transactional-email-deliverability-and-recovery-flows: done
+  epic-8-retrospective: done
 

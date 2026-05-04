@@ -126,6 +126,26 @@ describe('AuthService', () => {
     expect(service.isAuthenticated()).toBeFalse();
   });
 
+  it('extracts admin role from ClaimTypes.Role payload', () => {
+    localStorage.setItem('accessToken', buildJwt({
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      'http://schemas.microsoft.com/ws/2008/06/identity/claims/role': 'Admin'
+    }));
+
+    expect(service.getCurrentRole()).toBe('admin');
+    expect(service.hasRole('admin')).toBeTrue();
+  });
+
+  it('returns null role when no supported role claim exists', () => {
+    localStorage.setItem('accessToken', buildJwt({
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      scope: 'tasks.read'
+    }));
+
+    expect(service.getCurrentRole()).toBeNull();
+    expect(service.hasRole('admin')).toBeFalse();
+  });
+
   // ── password recovery ─────────────────────────────────────────────────────
 
   it('requests password recovery for an email', () => {
@@ -255,3 +275,14 @@ describe('authInterceptor', () => {
     expect(localStorage.getItem('refreshToken')).toBe('valid-refresh');
   });
 });
+
+function buildJwt(payload: Record<string, unknown>): string {
+  const header = base64UrlEncode({ alg: 'HS256', typ: 'JWT' });
+  const body = base64UrlEncode(payload);
+  return `${header}.${body}.signature`;
+}
+
+function base64UrlEncode(value: Record<string, unknown>): string {
+  const raw = btoa(JSON.stringify(value));
+  return raw.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}

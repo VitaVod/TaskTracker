@@ -49,7 +49,7 @@ public class AuthRepository(
             TimeZoneId = "UTC",
             Locale = "en-US",
             Role = AppRoles.User,
-            LeaderboardParticipationMode = LeaderboardParticipationMode.Hidden,
+            LeaderboardParticipationMode = LeaderboardParticipationMode.Public,
             CreatedAtUtc = DateTime.UtcNow,
             ModifiedAtUtc = DateTime.UtcNow
         };
@@ -113,95 +113,99 @@ public class AuthRepository(
         RefreshSession newSession,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-        try
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            var oldSession = await dbContext.RefreshSessions
-                .FirstOrDefaultAsync(s => s.Id == oldSessionId, cancellationToken);
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            if (oldSession is null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new RotateSessionResult(RotateSessionOutcome.NotFound, Guid.Empty, "Refresh session not found.");
-            }
-
-            // Replay detection: the presented token was already rotated
-            if (oldSession.RevokedAtUtc is not null && oldSession.RevokedReason == "rotated")
-            {
-                logger.LogWarning(
-                    "Replay attack detected: session {OldSessionId} was already rotated to {ReplacedBy}. Revoking active chain.",
-                    oldSessionId,
-                    oldSession.ReplacedBySessionId);
-
-                await RevokeActiveDescendantAsync(oldSession, "replay-detected", cancellationToken);
-                await dbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-
-                return new RotateSessionResult(RotateSessionOutcome.ReplayDetected, Guid.Empty, "Refresh token replay detected.");
-            }
-
-            if (oldSession.RevokedAtUtc is not null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new RotateSessionResult(RotateSessionOutcome.Revoked, Guid.Empty, "Session has been revoked.");
-            }
-
-            var now = DateTime.UtcNow;
-            oldSession.RevokedAtUtc = now;
-            oldSession.RevokedReason = "rotated";
-            oldSession.ReplacedBySessionId = newSession.Id;
-
-            dbContext.RefreshSessions.Add(newSession);
             try
             {
-                await dbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-
-                // Another request rotated/revoked this session first. Treat as replay-safe failure.
-                var latestOldSession = await dbContext.RefreshSessions
-                    .AsNoTracking()
+                var oldSession = await dbContext.RefreshSessions
                     .FirstOrDefaultAsync(s => s.Id == oldSessionId, cancellationToken);
 
-                if (latestOldSession is null)
+                if (oldSession is null)
                 {
+                    await transaction.RollbackAsync(cancellationToken);
                     return new RotateSessionResult(RotateSessionOutcome.NotFound, Guid.Empty, "Refresh session not found.");
                 }
 
-                if (latestOldSession.RevokedReason == "rotated")
+                // Replay detection: the presented token was already rotated
+                if (oldSession.RevokedAtUtc is not null && oldSession.RevokedReason == "rotated")
                 {
-                    var trackedLatest = await dbContext.RefreshSessions
-                        .FirstOrDefaultAsync(s => s.Id == oldSessionId, cancellationToken);
+                    logger.LogWarning(
+                        "Replay attack detected: session {OldSessionId} was already rotated to {ReplacedBy}. Revoking active chain.",
+                        oldSessionId,
+                        oldSession.ReplacedBySessionId);
 
-                    if (trackedLatest is not null)
-                    {
-                        await RevokeActiveDescendantAsync(trackedLatest, "replay-detected", cancellationToken);
-                        await dbContext.SaveChangesAsync(cancellationToken);
-                    }
+                    await RevokeActiveDescendantAsync(oldSession, "replay-detected", cancellationToken);
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
 
                     return new RotateSessionResult(RotateSessionOutcome.ReplayDetected, Guid.Empty, "Refresh token replay detected.");
                 }
 
-                return new RotateSessionResult(RotateSessionOutcome.Revoked, Guid.Empty, "Session has been revoked.");
+                if (oldSession.RevokedAtUtc is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return new RotateSessionResult(RotateSessionOutcome.Revoked, Guid.Empty, "Session has been revoked.");
+                }
+
+                var now = DateTime.UtcNow;
+                oldSession.RevokedAtUtc = now;
+                oldSession.RevokedReason = "rotated";
+                oldSession.ReplacedBySessionId = newSession.Id;
+
+                dbContext.RefreshSessions.Add(newSession);
+                try
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+
+                    // Another request rotated/revoked this session first. Treat as replay-safe failure.
+                    var latestOldSession = await dbContext.RefreshSessions
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(s => s.Id == oldSessionId, cancellationToken);
+
+                    if (latestOldSession is null)
+                    {
+                        return new RotateSessionResult(RotateSessionOutcome.NotFound, Guid.Empty, "Refresh session not found.");
+                    }
+
+                    if (latestOldSession.RevokedReason == "rotated")
+                    {
+                        var trackedLatest = await dbContext.RefreshSessions
+                            .FirstOrDefaultAsync(s => s.Id == oldSessionId, cancellationToken);
+
+                        if (trackedLatest is not null)
+                        {
+                            await RevokeActiveDescendantAsync(trackedLatest, "replay-detected", cancellationToken);
+                            await dbContext.SaveChangesAsync(cancellationToken);
+                        }
+
+                        return new RotateSessionResult(RotateSessionOutcome.ReplayDetected, Guid.Empty, "Refresh token replay detected.");
+                    }
+
+                    return new RotateSessionResult(RotateSessionOutcome.Revoked, Guid.Empty, "Session has been revoked.");
+                }
+
+                logger.LogInformation(
+                    "Session rotated: {OldSessionId} -> {NewSessionId} for user {UserId}",
+                    oldSessionId,
+                    newSession.Id,
+                    newSession.UserId);
+
+                return new RotateSessionResult(RotateSessionOutcome.Success, newSession.Id, null);
             }
-
-            logger.LogInformation(
-                "Session rotated: {OldSessionId} -> {NewSessionId} for user {UserId}",
-                oldSessionId,
-                newSession.Id,
-                newSession.UserId);
-
-            return new RotateSessionResult(RotateSessionOutcome.Success, newSession.Id, null);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
     }
 
     public async Task<bool> RevokeSessionAsync(Guid sessionId, string reason, CancellationToken cancellationToken)
@@ -318,83 +322,91 @@ public class AuthRepository(
             return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.InvalidToken, "Invalid recovery token format.");
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-        try
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            var token = await dbContext.PasswordRecoveryTokens
-                .AsNoTracking()
-                .FirstOrDefaultAsync(existingToken => existingToken.TokenId == tokenId, cancellationToken);
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            if (token is null)
+            try
             {
-                await transaction.RollbackAsync(cancellationToken);
-                return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.InvalidToken, "Recovery token could not be found.");
-            }
+                var token = await dbContext.PasswordRecoveryTokens
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(existingToken => existingToken.TokenId == tokenId, cancellationToken);
 
-            var now = DateTime.UtcNow;
-
-            if (token.UsedAtUtc is not null || token.RevokedAtUtc is not null || token.ExpiresAtUtc <= now)
-            {
-                if (token.RevokedAtUtc is null && token.ExpiresAtUtc <= now)
+                if (token is null)
                 {
-                    token.RevokedAtUtc = now;
-                    await dbContext.SaveChangesAsync(cancellationToken);
+                    await transaction.RollbackAsync(cancellationToken);
+                    return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.InvalidToken, "Recovery token could not be found.");
                 }
 
+                var now = DateTime.UtcNow;
+
+                if (token.UsedAtUtc is not null || token.RevokedAtUtc is not null || token.ExpiresAtUtc <= now)
+                {
+                    if (token.RevokedAtUtc is null && token.ExpiresAtUtc <= now)
+                    {
+                        token.RevokedAtUtc = now;
+                        await dbContext.SaveChangesAsync(cancellationToken);
+                    }
+
+                    await transaction.CommitAsync(cancellationToken);
+                    return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.ExpiredOrUsedToken, "Recovery token is expired or already used.");
+                }
+
+                var expectedHash = token.TokenHash;
+                var presentedHash = ComputeTokenHash(tokenSecret);
+                if (!FixedTimeEquals(expectedHash, presentedHash))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.InvalidToken, "Recovery token hash mismatch.");
+                }
+
+                var consumed = await TryConsumePasswordRecoveryTokenAsync(tokenId, now, cancellationToken);
+                if (!consumed)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.ExpiredOrUsedToken, "Recovery token is expired or already used.");
+                }
+
+                var user = await dbContext.Users
+                    .FirstOrDefaultAsync(existingUser => existingUser.Id == token.UserId, cancellationToken);
+
+                if (user is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.InvalidToken, "Recovery token user was not found.");
+                }
+
+                var (hash, salt) = passwordHasher.HashPassword(newPassword);
+                user.PasswordHash = hash;
+                user.PasswordSalt = salt;
+                user.ModifiedAtUtc = now;
+
+                var sessions = await dbContext.RefreshSessions
+                    .Where(session => session.UserId == user.Id && session.RevokedAtUtc == null)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var session in sessions)
+                {
+                    session.RevokedAtUtc = now;
+                    session.RevokedReason = "password-reset";
+                }
+
+                await dbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
-                return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.ExpiredOrUsedToken, "Recovery token is expired or already used.");
-            }
 
-            var expectedHash = token.TokenHash;
-            var presentedHash = ComputeTokenHash(tokenSecret);
-            if (!FixedTimeEquals(expectedHash, presentedHash))
+                return new PasswordResetWithRecoveryResult(
+                    PasswordResetWithRecoveryOutcome.Success,
+                    null,
+                    user.Id,
+                    user.Email);
+            }
+            catch
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.InvalidToken, "Recovery token hash mismatch.");
+                throw;
             }
-
-            var consumed = await TryConsumePasswordRecoveryTokenAsync(tokenId, now, cancellationToken);
-            if (!consumed)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.ExpiredOrUsedToken, "Recovery token is expired or already used.");
-            }
-
-            var user = await dbContext.Users
-                .FirstOrDefaultAsync(existingUser => existingUser.Id == token.UserId, cancellationToken);
-
-            if (user is null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.InvalidToken, "Recovery token user was not found.");
-            }
-
-            var (hash, salt) = passwordHasher.HashPassword(newPassword);
-            user.PasswordHash = hash;
-            user.PasswordSalt = salt;
-            user.ModifiedAtUtc = now;
-
-            var sessions = await dbContext.RefreshSessions
-                .Where(session => session.UserId == user.Id && session.RevokedAtUtc == null)
-                .ToListAsync(cancellationToken);
-
-            foreach (var session in sessions)
-            {
-                session.RevokedAtUtc = now;
-                session.RevokedReason = "password-reset";
-            }
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            return new PasswordResetWithRecoveryResult(PasswordResetWithRecoveryOutcome.Success, null);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        });
     }
 
     private async Task RevokeActiveDescendantAsync(

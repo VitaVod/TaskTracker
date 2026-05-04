@@ -26,6 +26,72 @@
       }
     </nav>
 
+    <section class="planning-filter-bar" aria-label="Task planning filters">
+      <p class="planning-title">Focus filters</p>
+      <p class="planning-help">Energy means mental load for a task: low for routine, high for deep-focus work.</p>
+
+      <div class="planning-filter-grid">
+        <label for="title-filter">
+          <span>Title</span>
+          <input
+            id="title-filter"
+            type="text"
+            maxlength="160"
+            [value]="titleFilterInput"
+            (input)="setTitleFilter($event)"
+            (keyup.enter)="applyPlanningFilters()"
+            placeholder="search task title" />
+        </label>
+
+        <label for="priority-filter">
+          <span>Priority</span>
+          <select id="priority-filter" [value]="selectedPriorityFilter" (change)="setPriorityFilter($event)">
+            <option value="">All priorities</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+
+        <label for="difficulty-filter">
+          <span>Difficulty</span>
+          <select id="difficulty-filter" [value]="selectedDifficultyFilter" (change)="setDifficultyFilter($event)">
+            <option value="">All difficulty levels</option>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+
+        <label for="energy-filter">
+          <span>Energy</span>
+          <select id="energy-filter" [value]="selectedEnergyFilter" (change)="setEnergyFilter($event)">
+            <option value="">All energy levels</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+
+        <label for="context-filter" class="context-field">
+          <span>Context</span>
+          <input
+            id="context-filter"
+            type="text"
+            maxlength="64"
+            [value]="contextFilterInput"
+            (input)="setContextFilter($event)"
+            (keyup.enter)="applyPlanningFilters()"
+            placeholder="office, home, commute" />
+        </label>
+      </div>
+
+      <div class="planning-actions">
+        <button type="button" class="save-button" (click)="applyPlanningFilters()">Apply filters</button>
+        <button type="button" class="cancel-button" (click)="clearPlanningFilters()">Clear</button>
+      </div>
+    </section>
+
     <p class="summary" aria-label="Task summary counts">
       Active: {{ activeCount }} | Completed: {{ completedCount }}
     </p>
@@ -81,46 +147,53 @@
     <p class="sr-only" aria-live="polite">{{ progressAnnouncement }}</p>
     <p class="sr-only" aria-live="assertive">{{ isUiLoadError() ? currentLoadErrorMessage() : '' }}</p>
 
-    @if (isUiLoading()) {
-      <section class="loading-state" aria-label="Loading tasks" aria-busy="true">
-        <p class="status">Loading tasks...</p>
-        <div class="loading-skeleton" aria-hidden="true"></div>
-        <div class="loading-skeleton" aria-hidden="true"></div>
-        <div class="loading-skeleton" aria-hidden="true"></div>
-      </section>
-    } @else if (isUiLoadError()) {
-      <section class="error-state" role="alert" aria-live="assertive">
-        <p class="status error">{{ currentLoadErrorMessage() }}</p>
-        @if (currentLoadErrorSupportText()) {
-          <p class="error-support">{{ currentLoadErrorSupportText() }}</p>
-        }
-        <div class="state-actions">
-          <button type="button" class="save-button" (click)="retryLoad()">Retry</button>
-          <a routerLink="/tasks/new" class="create-link">Create a task</a>
-        </div>
-      </section>
-    } @else if (isUiEmpty()) {
-      <section class="empty-state" aria-live="polite">
-        <h2>{{ currentEmptyHeading() }}</h2>
-        <p class="status">{{ currentEmptyGuidance() }}</p>
-        <div class="state-actions">
-          <a routerLink="/tasks/new" class="create-primary">Create a task</a>
-          @if (selectedFilter !== 'all') {
-            <button type="button" class="cancel-button" (click)="resetFilterToAll()">View all tasks</button>
+    <section class="task-results" [attr.data-switch-phase]="tabSwitchAnimationPhase">
+      @if (isUiLoading()) {
+        <section class="loading-state" aria-label="Loading tasks" aria-busy="true">
+          <p class="status">Loading tasks...</p>
+          <div class="loading-skeleton" aria-hidden="true"></div>
+          <div class="loading-skeleton" aria-hidden="true"></div>
+          <div class="loading-skeleton" aria-hidden="true"></div>
+        </section>
+      } @else if (isUiLoadError()) {
+        <section class="error-state" role="alert" aria-live="assertive">
+          <p class="status error">{{ currentLoadErrorMessage() }}</p>
+          @if (currentLoadErrorSupportText()) {
+            <p class="error-support">{{ currentLoadErrorSupportText() }}</p>
           }
-        </div>
-      </section>
-    } @else {
-      @if (selectedFilter === 'all') {
+          <div class="state-actions">
+            <button type="button" class="save-button" (click)="retryLoad()">Retry</button>
+            <a routerLink="/tasks/new" class="create-link">Create a task</a>
+          </div>
+        </section>
+      } @else if (isUiEmpty()) {
+        <section class="empty-state" aria-live="polite">
+          <h2>{{ currentEmptyHeading() }}</h2>
+          <p class="status">{{ currentEmptyGuidance() }}</p>
+          <div class="state-actions">
+            <a routerLink="/tasks/new" class="create-primary">Create a task</a>
+            @if (selectedFilter !== 'all') {
+              <button type="button" class="cancel-button" (click)="resetFilterToAll()">View all tasks</button>
+            }
+          </div>
+        </section>
+      } @else {
+        @if (selectedFilter === 'all') {
         <section class="segment" aria-label="Active tasks segment">
           <h2>Active tasks</h2>
           @if (activeTasks.length === 0) {
-            <p class="status">No active tasks found.</p>
+            <section class="empty-state active-empty-state" aria-live="polite">
+              <h3>No active tasks found</h3>
+              <p class="status">Create your next task to start building momentum.</p>
+              <div class="state-actions">
+                <a routerLink="/tasks/new" class="create-primary">Create a task</a>
+              </div>
+            </section>
           } @else {
             <ul class="task-list">
               @for (task of activeTasks; track trackByTaskId($index, task)) {
                 <li>
-                  <article class="task-card">
+                  <article class="task-card" [attr.data-priority]="task.priority">
                     <div class="task-header-row">
                       <h3>{{ task.title }}</h3>
                       <div class="task-actions">
@@ -132,7 +205,7 @@
                           (click)="toggleCompletion(task, !task.isCompleted)">
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
-                        <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
+                        <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
                         <button
                           type="button"
                           class="delete-button"
@@ -156,7 +229,7 @@
                         }
 
                         <label for="edit-description">Description</label>
-                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3"></textarea>
+                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3" style="resize: vertical;"></textarea>
                         @if (fieldError('description')) {
                           <p class="field-error">{{ fieldError('description') }}</p>
                         }
@@ -204,6 +277,46 @@
                           <p class="field-error">{{ fieldError('category') }}</p>
                         }
 
+                        <div class="row">
+                          <div>
+                            <label for="edit-difficulty">Difficulty</label>
+                            <select id="edit-difficulty" formControlName="difficulty">
+                              <option value="easy">Easy</option>
+                              <option value="medium">Medium</option>
+                              <option value="hard">Hard</option>
+                            </select>
+                            @if (fieldError('difficulty')) {
+                              <p class="field-error">{{ fieldError('difficulty') }}</p>
+                            }
+                          </div>
+
+                          <div>
+                            <label for="edit-energyLevel">Energy level</label>
+                            <select id="edit-energyLevel" formControlName="energyLevel">
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                            @if (fieldError('energyLevel')) {
+                              <p class="field-error">{{ fieldError('energyLevel') }}</p>
+                            }
+                          </div>
+                        </div>
+
+                        <label for="edit-contextTag">Context tag</label>
+                        <input id="edit-contextTag" type="text" formControlName="contextTag" maxlength="64" />
+                        @if (fieldError('contextTag')) {
+                          <p class="field-error">{{ fieldError('contextTag') }}</p>
+                        }
+
+                        <div>
+                          <label for="edit-effortPoints">Effort points (1-100)</label>
+                          <input id="edit-effortPoints" type="number" formControlName="effortPoints" min="1" max="100" />
+                          @if (fieldError('effortPoints')) {
+                            <p class="field-error">{{ fieldError('effortPoints') }}</p>
+                          }
+                        </div>
+
                         @if (saveErrorMessage) {
                           <div class="api-error-group" role="alert">
                             <p class="api-error">{{ saveErrorMessage }}</p>
@@ -223,7 +336,7 @@
                       </form>
                     } @else {
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
-                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }} | Difficulty: {{ task.difficulty }} | Energy: {{ task.energyLevel }}{{ task.contextTag ? ' | Context: ' + task.contextTag : '' }}</p>
                       @if (toggleError(task.id)) {
                         <div class="api-error-group" role="alert">
                           <p class="api-error">{{ toggleError(task.id) }}</p>
@@ -252,7 +365,7 @@
             <ul class="task-list">
               @for (task of completedTasks; track trackByTaskId($index, task)) {
                 <li>
-                  <article class="task-card completed">
+                  <article class="task-card completed" [attr.data-priority]="task.priority">
                     <div class="task-header-row">
                       <h3>{{ task.title }}</h3>
                       <div class="task-actions">
@@ -264,15 +377,7 @@
                           (click)="toggleCompletion(task, !task.isCompleted)">
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
-                        <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
-                        <button
-                          type="button"
-                          class="delete-button"
-                          [disabled]="isDeleteInFlight(task.id)"
-                          [attr.aria-label]="'Delete task ' + task.title"
-                          (click)="requestDelete(task, $event)">
-                          {{ isDeleteInFlight(task.id) ? 'Deleting...' : 'Delete' }}
-                        </button>
+                        <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
                       </div>
                     </div>
 
@@ -288,7 +393,7 @@
                         }
 
                         <label for="edit-description">Description</label>
-                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3"></textarea>
+                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3" style="resize: vertical;"></textarea>
                         @if (fieldError('description')) {
                           <p class="field-error">{{ fieldError('description') }}</p>
                         }
@@ -336,6 +441,46 @@
                           <p class="field-error">{{ fieldError('category') }}</p>
                         }
 
+                        <div class="row">
+                          <div>
+                            <label for="edit-difficulty">Difficulty</label>
+                            <select id="edit-difficulty" formControlName="difficulty">
+                              <option value="easy">Easy</option>
+                              <option value="medium">Medium</option>
+                              <option value="hard">Hard</option>
+                            </select>
+                            @if (fieldError('difficulty')) {
+                              <p class="field-error">{{ fieldError('difficulty') }}</p>
+                            }
+                          </div>
+
+                          <div>
+                            <label for="edit-energyLevel">Energy level</label>
+                            <select id="edit-energyLevel" formControlName="energyLevel">
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                            @if (fieldError('energyLevel')) {
+                              <p class="field-error">{{ fieldError('energyLevel') }}</p>
+                            }
+                          </div>
+                        </div>
+
+                        <label for="edit-contextTag">Context tag</label>
+                        <input id="edit-contextTag" type="text" formControlName="contextTag" maxlength="64" />
+                        @if (fieldError('contextTag')) {
+                          <p class="field-error">{{ fieldError('contextTag') }}</p>
+                        }
+
+                        <div>
+                          <label for="edit-effortPoints">Effort points (1-100)</label>
+                          <input id="edit-effortPoints" type="number" formControlName="effortPoints" min="1" max="100" />
+                          @if (fieldError('effortPoints')) {
+                            <p class="field-error">{{ fieldError('effortPoints') }}</p>
+                          }
+                        </div>
+
                         @if (saveErrorMessage) {
                           <div class="api-error-group" role="alert">
                             <p class="api-error">{{ saveErrorMessage }}</p>
@@ -355,7 +500,7 @@
                       </form>
                     } @else {
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
-                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }} | Difficulty: {{ task.difficulty }} | Energy: {{ task.energyLevel }}{{ task.contextTag ? ' | Context: ' + task.contextTag : '' }}</p>
                       @if (toggleError(task.id)) {
                         <div class="api-error-group" role="alert">
                           <p class="api-error">{{ toggleError(task.id) }}</p>
@@ -375,8 +520,8 @@
             </ul>
           }
         </section>
-      } @else {
-        <section class="segment" [attr.aria-label]="selectedFilter === 'active' ? 'Active tasks segment' : 'Completed tasks segment'">
+        } @else {
+          <section class="segment" [attr.aria-label]="selectedFilter === 'active' ? 'Active tasks segment' : 'Completed tasks segment'">
           <h2>{{ selectedFilter === 'active' ? 'Active tasks' : 'Completed tasks' }}</h2>
 
           @if (tasks.length === 0) {
@@ -385,7 +530,7 @@
             <ul class="task-list">
               @for (task of tasks; track trackByTaskId($index, task)) {
                 <li>
-                  <article class="task-card" [class.completed]="task.isCompleted">
+                  <article class="task-card" [class.completed]="task.isCompleted" [attr.data-priority]="task.priority">
                     <div class="task-header-row">
                       <h3>{{ task.title }}</h3>
                       <div class="task-actions">
@@ -397,15 +542,17 @@
                           (click)="toggleCompletion(task, !task.isCompleted)">
                           {{ isToggleInFlight(task.id) ? 'Updating...' : (task.isCompleted ? 'Mark active' : 'Mark completed') }}
                         </button>
-                        <button type="button" class="edit-button" (click)="startEdit(task)" [attr.aria-label]="'Edit task ' + task.title">Edit</button>
-                        <button
-                          type="button"
-                          class="delete-button"
-                          [disabled]="isDeleteInFlight(task.id)"
-                          [attr.aria-label]="'Delete task ' + task.title"
-                          (click)="requestDelete(task, $event)">
-                          {{ isDeleteInFlight(task.id) ? 'Deleting...' : 'Delete' }}
-                        </button>
+                        <button type="button" class="edit-button" (click)="toggleEdit(task)" [attr.aria-label]="(isEditing(task) ? 'Close editor for task ' : 'Edit task ') + task.title">{{ isEditing(task) ? 'Close editor' : 'Edit' }}</button>
+                        @if (!task.isCompleted) {
+                          <button
+                            type="button"
+                            class="delete-button"
+                            [disabled]="isDeleteInFlight(task.id)"
+                            [attr.aria-label]="'Delete task ' + task.title"
+                            (click)="requestDelete(task, $event)">
+                            {{ isDeleteInFlight(task.id) ? 'Deleting...' : 'Delete' }}
+                          </button>
+                        }
                       </div>
                     </div>
 
@@ -421,7 +568,7 @@
                         }
 
                         <label for="edit-description">Description</label>
-                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3"></textarea>
+                        <textarea id="edit-description" formControlName="description" maxlength="2000" rows="3" style="resize: vertical;"></textarea>
                         @if (fieldError('description')) {
                           <p class="field-error">{{ fieldError('description') }}</p>
                         }
@@ -469,6 +616,46 @@
                           <p class="field-error">{{ fieldError('category') }}</p>
                         }
 
+                        <div class="row">
+                          <div>
+                            <label for="edit-difficulty">Difficulty</label>
+                            <select id="edit-difficulty" formControlName="difficulty">
+                              <option value="easy">Easy</option>
+                              <option value="medium">Medium</option>
+                              <option value="hard">Hard</option>
+                            </select>
+                            @if (fieldError('difficulty')) {
+                              <p class="field-error">{{ fieldError('difficulty') }}</p>
+                            }
+                          </div>
+
+                          <div>
+                            <label for="edit-energyLevel">Energy level</label>
+                            <select id="edit-energyLevel" formControlName="energyLevel">
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                            @if (fieldError('energyLevel')) {
+                              <p class="field-error">{{ fieldError('energyLevel') }}</p>
+                            }
+                          </div>
+                        </div>
+
+                        <label for="edit-contextTag">Context tag</label>
+                        <input id="edit-contextTag" type="text" formControlName="contextTag" maxlength="64" />
+                        @if (fieldError('contextTag')) {
+                          <p class="field-error">{{ fieldError('contextTag') }}</p>
+                        }
+
+                        <div>
+                          <label for="edit-effortPoints">Effort points (1-100)</label>
+                          <input id="edit-effortPoints" type="number" formControlName="effortPoints" min="1" max="100" />
+                          @if (fieldError('effortPoints')) {
+                            <p class="field-error">{{ fieldError('effortPoints') }}</p>
+                          }
+                        </div>
+
                         @if (saveErrorMessage) {
                           <div class="api-error-group" role="alert">
                             <p class="api-error">{{ saveErrorMessage }}</p>
@@ -488,7 +675,7 @@
                       </form>
                     } @else {
                       <p class="state-text">State: {{ task.isCompleted ? 'Completed' : 'Active' }}</p>
-                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }}</p>
+                      <p class="meta">Priority: {{ task.priority }} | Category: {{ toCategoryLabel(task.category) }} | Difficulty: {{ task.difficulty }} | Energy: {{ task.energyLevel }}{{ task.contextTag ? ' | Context: ' + task.contextTag : '' }}</p>
                       @if (toggleError(task.id)) {
                         <div class="api-error-group" role="alert">
                           <p class="api-error">{{ toggleError(task.id) }}</p>
@@ -507,9 +694,10 @@
               }
             </ul>
           }
-        </section>
+          </section>
+        }
       }
-    }
+    </section>
   </section>
 
   @if (pendingDeleteTask) {

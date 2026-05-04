@@ -1,9 +1,12 @@
 using System.Security.Claims;
+using System.Net.Mail;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Api.Features.Account.Contracts;
 using TaskTracker.Api.Features.Account.Repositories;
+using TaskTracker.Api.Features.Auth.Security;
+using TaskTracker.Api.Features.Notifications.AccountEvents;
 using TaskTracker.Api.Features.Account.Validation;
 using TaskTracker.Api.Infrastructure.Authorization;
 using TaskTracker.Api.Infrastructure.Persistence.Entities;
@@ -15,9 +18,13 @@ namespace TaskTracker.Api.Controllers;
 [Route("api/v1/account")]
 public class AccountController(
     IAccountRepository accountRepository,
+    IPasswordHasher passwordHasher,
+    IAccountEventNotificationService accountEventNotificationService,
     IAccountUpdateValidator accountUpdateValidator,
     ILogger<AccountController> logger) : ControllerBase
 {
+    private static readonly TimeSpan EmailChangeTokenLifetime = TimeSpan.FromMinutes(30);
+
     [HttpGet("me")]
     [ProducesResponseType<AccountMeResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
@@ -126,6 +133,113 @@ public class AccountController(
         return Ok(new AccountUpdateResponse("Settings updated successfully"));
     }
 
+    [HttpPost("email-change/request")]
+    [ProducesResponseType<AccountEmailChangeRequestResponse>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RequestEmailChange(
+        [FromBody] AccountEmailChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryResolveCurrentUserId(out var userId))
+        {
+            return UnauthorizedProblem("account.identity.invalid");
+        }
+
+        var validationErrors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        var normalizedNewEmail = (request.NewEmail ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (!IsEmailValid(normalizedNewEmail))
+        {
+            validationErrors["newEmail"] = ["A valid email address is required."];
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+        {
+            validationErrors["currentPassword"] = ["Current password is required."];
+        }
+
+        if (validationErrors.Count > 0)
+        {
+            return ValidationProblem("account.email-change.validation_failed", validationErrors);
+        }
+
+        var user = await accountRepository.FindUserByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return NotFoundProblem("account.user.not_found", "User account could not be found.");
+        }
+
+        if (string.Equals(user.Email, normalizedNewEmail, StringComparison.Ordinal))
+        {
+            return ValidationProblem("account.email-change.validation_failed", new Dictionary<string, string[]>
+            {
+                ["newEmail"] = ["New email must be different from your current email."]
+            });
+        }
+
+        if (!passwordHasher.Verify(request.CurrentPassword, user.PasswordHash, user.PasswordSalt))
+        {
+            return ValidationProblem("account.email-change.validation_failed", new Dictionary<string, string[]>
+            {
+                ["currentPassword"] = ["Current password is incorrect."]
+            });
+        }
+
+        var existingUser = await accountRepository.FindUserByEmailAsync(normalizedNewEmail, cancellationToken);
+        if (existingUser is null)
+        {
+            var issued = await accountRepository.IssueEmailChangeTokenAsync(
+                user.Id,
+                normalizedNewEmail,
+                EmailChangeTokenLifetime,
+                cancellationToken);
+
+            await accountEventNotificationService.NotifyEmailChangeRequestedAsync(
+                user.Id,
+                issued.NewEmail,
+                issued.TokenId,
+                BuildEmailChangeConfirmationLink(issued.PlainTextToken),
+                issued.ExpiresAtUtc,
+                HttpContext.TraceIdentifier,
+                cancellationToken);
+        }
+
+        return Accepted(new AccountEmailChangeRequestResponse(
+            "If the email can be changed, a confirmation link has been sent."));
+    }
+
+    [AllowAnonymous]
+    [HttpPost("email-change/confirm")]
+    [ProducesResponseType<AccountEmailChangeConfirmResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ConfirmEmailChange(
+        [FromBody] AccountEmailChangeConfirmRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+        {
+            return EmailChangeInvalidProblem();
+        }
+
+        var result = await accountRepository.ConfirmEmailChangeAsync(request.Token, cancellationToken);
+        if (result.Outcome == ConfirmEmailChangeOutcome.Success)
+        {
+            await accountEventNotificationService.NotifyEmailChangeCompletedAsync(
+                result.UserId!.Value,
+                result.PreviousEmail!,
+                result.NewEmail!,
+                HttpContext.TraceIdentifier,
+                cancellationToken);
+
+            return Ok(new AccountEmailChangeConfirmResponse("Email updated successfully"));
+        }
+
+        return EmailChangeInvalidProblem();
+    }
+
     [HttpGet("users/{userId:guid}")]
     [Authorize(Policy = AppPolicies.AccountOwnerOrPrivileged)]
     [ProducesResponseType<AccountMeResponse>(StatusCodes.Status200OK)]
@@ -203,6 +317,27 @@ public class AccountController(
                 : "hidden";
     }
 
+    private string BuildEmailChangeConfirmationLink(string rawToken)
+    {
+        var encodedToken = Uri.EscapeDataString(rawToken);
+        var host = Request.Host.HasValue ? Request.Host.Value : "app.tasktracker.local";
+        var scheme = string.IsNullOrWhiteSpace(Request.Scheme) ? "https" : Request.Scheme;
+        return $"{scheme}://{host}/account/confirm-email-change?token={encodedToken}";
+    }
+
+    private static bool IsEmailValid(string email)
+    {
+        try
+        {
+            _ = new MailAddress(email);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
     private ObjectResult ValidationProblem(string code, Dictionary<string, string[]> errors)
     {
         var details = new ValidationProblemDetails(errors)
@@ -248,5 +383,21 @@ public class AccountController(
         details.Extensions["traceId"] = HttpContext.TraceIdentifier;
 
         return StatusCode(StatusCodes.Status404NotFound, details);
+    }
+
+    private ObjectResult EmailChangeInvalidProblem()
+    {
+        var details = new ProblemDetails
+        {
+            Type = "https://api.tasktracker.local/problems/email-change-invalid",
+            Title = "Email Change Link Invalid",
+            Status = StatusCodes.Status400BadRequest,
+            Detail = "This email confirmation link is expired, invalid, or already used. Request a new email change."
+        };
+
+        details.Extensions["code"] = "account.email-change.invalid";
+        details.Extensions["traceId"] = HttpContext.TraceIdentifier;
+
+        return BadRequest(details);
     }
 }

@@ -84,4 +84,31 @@ describe('LeaderboardService', () => {
     expect(problem.traceId).toBe('0HN1LEADERBOARD123');
     expect(problem.errors['page'][0]).toContain('greater than or equal to 1');
   });
+
+  it('requests public profile by handle', () => {
+    let responseBody: unknown;
+
+    service.getPublicProfile('p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa').subscribe((response) => {
+      responseBody = response;
+    });
+
+    const request = httpMock.expectOne('/api/v1/leaderboards/profiles/p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(request.request.method).toBe('GET');
+
+    request.flush({
+      visibility: 'public',
+      publicIdentity: 'Sky Pilot',
+      avatarMarker: 'avatar-abc123',
+      statistics: {
+        currentStreakDays: 7,
+        longestStreakDays: 14,
+        completedTaskCount: 21,
+        totalXp: 480,
+        lastCompletedAtUtc: '2026-05-03T14:00:00Z'
+      },
+      message: null
+    });
+
+    expect(responseBody).toBeTruthy();
+  });
 });

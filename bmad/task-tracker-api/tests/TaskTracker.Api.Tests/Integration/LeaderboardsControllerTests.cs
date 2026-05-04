@@ -77,12 +77,16 @@ public class LeaderboardsControllerTests
 
         Assert.Equal("public", items[0].GetProperty("identityMode").GetString());
         Assert.Equal(firstExpectedPublicName, items[0].GetProperty("publicIdentity").GetString());
+        Assert.Equal(ToPublicProfileHandle(topTied[0]), items[0].GetProperty("publicProfileHandle").GetString());
         Assert.Equal("public", items[1].GetProperty("identityMode").GetString());
         Assert.Equal(secondExpectedPublicName, items[1].GetProperty("publicIdentity").GetString());
+        Assert.Equal(ToPublicProfileHandle(topTied[1]), items[1].GetProperty("publicProfileHandle").GetString());
         Assert.Equal("anonymous", items[2].GetProperty("identityMode").GetString());
         Assert.Equal(ToAnonymousIdentity(third.UserId), items[2].GetProperty("publicIdentity").GetString());
+        Assert.Equal(JsonValueKind.Null, items[2].GetProperty("publicProfileHandle").ValueKind);
         Assert.Equal("anonymous", items[3].GetProperty("identityMode").GetString());
         Assert.Equal(ToAnonymousIdentity(caller.UserId), items[3].GetProperty("publicIdentity").GetString());
+        Assert.Equal(JsonValueKind.Null, items[3].GetProperty("publicProfileHandle").ValueKind);
 
         Assert.Equal(9, items[0].GetProperty("metricValue").GetInt32());
         Assert.Equal(9, items[1].GetProperty("metricValue").GetInt32());
@@ -237,6 +241,75 @@ public class LeaderboardsControllerTests
 
         Assert.Equal(ToAnonymousIdentity(publicWithoutAlias.UserId), items[0].GetProperty("publicIdentity").GetString());
         Assert.Equal("anonymous", items[0].GetProperty("identityMode").GetString());
+        Assert.Equal(JsonValueKind.Null, items[0].GetProperty("publicProfileHandle").ValueKind);
+    }
+
+    [Fact]
+    public async Task GetProfile_WhenParticipantIsPublic_ReturnsApprovedStatistics()
+    {
+        await using var factory = new AuthTestFactory();
+        using var client = factory.CreateClient();
+
+        var caller = await RegisterAndLoginWithUserAsync(client, "leaderboard.profile.caller@example.com");
+        var target = await RegisterAndLoginWithUserAsync(client, "leaderboard.profile.target@example.com");
+
+        await factory.SetLeaderboardParticipationModeAsync(caller.UserId, LeaderboardParticipationMode.Anonymous);
+        await factory.SetLeaderboardParticipationModeAsync(target.UserId, LeaderboardParticipationMode.Public);
+        await factory.SetUserDisplayNameAsync(target.UserId, "Public Pace");
+
+        await factory.UpsertStreakSnapshotAsync(CreateSnapshot(target.UserId, 8));
+        await SeedCompletedEventsAsync(factory, target.UserId, 3);
+
+        var payload = await GetPublicProfilePayloadAsync(
+            client,
+            caller.Tokens.AccessToken,
+            ToPublicProfileHandle(target.UserId));
+
+        Assert.Equal("public", payload.GetProperty("visibility").GetString());
+        Assert.Equal("Public Pace", payload.GetProperty("publicIdentity").GetString());
+        Assert.StartsWith("avatar-", payload.GetProperty("avatarMarker").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("message").ValueKind);
+
+        var statistics = payload.GetProperty("statistics");
+        Assert.Equal(8, statistics.GetProperty("currentStreakDays").GetInt32());
+        Assert.Equal(8, statistics.GetProperty("longestStreakDays").GetInt32());
+        Assert.Equal(3, statistics.GetProperty("completedTaskCount").GetInt32());
+
+        Assert.False(payload.TryGetProperty("email", out _));
+        Assert.False(payload.TryGetProperty("userId", out _));
+        Assert.False(payload.TryGetProperty("timeZoneId", out _));
+        Assert.False(payload.TryGetProperty("locale", out _));
+    }
+
+    [Fact]
+    public async Task GetProfile_WhenParticipantIsAnonymousOrHandleInvalid_ReturnsDeterministicAnonymousResponse()
+    {
+        await using var factory = new AuthTestFactory();
+        using var client = factory.CreateClient();
+
+        var caller = await RegisterAndLoginWithUserAsync(client, "leaderboard.profile.guard.caller@example.com");
+        var anonymousTarget = await RegisterAndLoginWithUserAsync(client, "leaderboard.profile.guard.target@example.com");
+
+        await factory.SetLeaderboardParticipationModeAsync(caller.UserId, LeaderboardParticipationMode.Anonymous);
+        await factory.SetLeaderboardParticipationModeAsync(anonymousTarget.UserId, LeaderboardParticipationMode.Anonymous);
+
+        var anonymousPayload = await GetPublicProfilePayloadAsync(
+            client,
+            caller.Tokens.AccessToken,
+            ToPublicProfileHandle(anonymousTarget.UserId));
+
+        var invalidPayload = await GetPublicProfilePayloadAsync(
+            client,
+            caller.Tokens.AccessToken,
+            $"p-{Guid.NewGuid():N}");
+
+        Assert.Equal("anonymous", anonymousPayload.GetProperty("visibility").GetString());
+        Assert.Equal("anonymous", invalidPayload.GetProperty("visibility").GetString());
+        Assert.Equal(JsonValueKind.Null, anonymousPayload.GetProperty("statistics").ValueKind);
+        Assert.Equal(JsonValueKind.Null, invalidPayload.GetProperty("statistics").ValueKind);
+        Assert.Equal(
+            anonymousPayload.GetProperty("message").GetString(),
+            invalidPayload.GetProperty("message").GetString());
     }
 
     [Fact]
@@ -426,33 +499,21 @@ public class LeaderboardsControllerTests
     private static async Task SeedCompletedEventsAsync(AuthTestFactory factory, Guid userId, int completedCount)
     {
         var now = DateTime.UtcNow;
-        var task = await factory.AddTaskAsync(new TaskItem
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            Title = $"Completed events task {completedCount}",
-            Description = "Leaderboard completed-task seeding",
-            DueAtUtc = null,
-            Priority = "medium",
-            Category = "work",
-            IsCompleted = true,
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now
-        });
-
         for (var index = 0; index < completedCount; index++)
         {
-            var occurredAtUtc = now.AddMinutes(-(index + 1));
-            await factory.AddTaskCompletionEventAsync(new TaskCompletionEvent
+            var createdAtUtc = now.AddMinutes(-(index + 1));
+            await factory.AddTaskAsync(new TaskItem
             {
                 Id = Guid.NewGuid(),
-                TaskId = task.Id,
-                OwnerId = userId,
-                EventName = "TaskCompleted",
-                ResultingIsCompleted = true,
-                IdempotencyKey = Guid.NewGuid().ToString(),
-                OccurredAtUtc = occurredAtUtc,
-                CreatedAtUtc = occurredAtUtc
+                UserId = userId,
+                Title = $"Completed seeded task {index + 1}",
+                Description = "Leaderboard completed-task seeding",
+                DueAtUtc = null,
+                Priority = "medium",
+                Category = "work",
+                IsCompleted = true,
+                CreatedAtUtc = createdAtUtc,
+                UpdatedAtUtc = createdAtUtc
             });
         }
     }
@@ -479,8 +540,31 @@ public class LeaderboardsControllerTests
         return (await response.Content.ReadFromJsonAsync<JsonElement>())!;
     }
 
+    private static async Task<JsonElement> GetPublicProfilePayloadAsync(
+        HttpClient client,
+        string accessToken,
+        string profileHandle)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/leaderboards/profiles/{profileHandle}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var response = await client.SendAsync(request);
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            throw new Xunit.Sdk.XunitException($"Expected 200 OK but got {(int)response.StatusCode} {response.StatusCode}. Body: {body}");
+        }
+
+        return (await response.Content.ReadFromJsonAsync<JsonElement>())!;
+    }
+
     private static string ToAnonymousIdentity(Guid userId)
     {
         return $"anon-{userId:N}"[..13];
+    }
+
+    private static string ToPublicProfileHandle(Guid userId)
+    {
+        return $"p-{userId:N}";
     }
 }

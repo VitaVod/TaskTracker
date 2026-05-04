@@ -6,6 +6,9 @@
       <p class="subtitle">Compare streak consistency and completed work across all participants.</p>
       <div class="header-actions">
         <a routerLink="/dashboard" class="back-link">Back to dashboard</a>
+        @if (isAdmin) {
+          <a routerLink="/ops/suspicious-cases" class="back-link">Suspicious review workspace</a>
+        }
       </div>
     </header>
 
@@ -70,7 +73,11 @@
                     <div class="identity-cell">
                       <span class="avatar-chip" aria-hidden="true">{{ entry.avatarMarker }}</span>
                       <div>
-                        <p class="identity-name">{{ entry.publicIdentity }}</p>
+                        @if (canViewPublicProfile(entry)) {
+                          <a class="identity-name" [routerLink]="publicProfileRoute(entry)">{{ entry.publicIdentity }}</a>
+                        } @else {
+                          <p class="identity-name">{{ entry.publicIdentity }}</p>
+                        }
                         <p class="identity-mode">{{ identityModeLabel(entry) }}</p>
                       </div>
                     </div>

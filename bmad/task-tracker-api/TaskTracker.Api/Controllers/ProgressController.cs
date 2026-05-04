@@ -42,7 +42,20 @@ public class ProgressController(
             summary.LedgerEntryCount,
             HttpContext.TraceIdentifier);
 
-        return Ok(new ProgressXpSummaryResponse(summary.TotalXp, summary.LedgerEntryCount, summary.LastGrantedAtUtc));
+        return Ok(new ProgressXpSummaryResponse(
+            summary.TotalXp,
+            summary.LedgerEntryCount,
+            summary.LastGrantedAtUtc,
+            new ProgressLevelSnapshotResponse(
+                summary.LevelProgress.CurrentLevel,
+                summary.LevelProgress.CurrentLevelThresholdXp,
+                summary.LevelProgress.NextLevel,
+                summary.LevelProgress.NextLevelThresholdXp,
+                summary.LevelProgress.PercentToNextLevel,
+                summary.LevelProgress.BandMilestoneLevels,
+                summary.LevelProgress.ReachedBandCount,
+                summary.LevelProgress.NextBandLevel),
+            new ProgressExplanationResponse(summary.OutcomeReasonCode, summary.OutcomeExplanation)));
     }
 
     [HttpGet("streak")]
@@ -76,7 +89,14 @@ public class ProgressController(
             snapshot.TimeZoneId,
             snapshot.EvaluationWindowStartUtc,
             snapshot.EvaluationWindowEndUtc,
-            snapshot.LastEvaluatedAtUtc));
+            snapshot.LastEvaluatedAtUtc,
+            snapshot.IsRecoveryPromptVisible,
+            snapshot.RecoveryReason,
+            snapshot.RecommendedAction,
+            new ProgressExplanationResponse(snapshot.OutcomeReasonCode, snapshot.OutcomeExplanation),
+            snapshot.RecoveryExplanation is null
+                ? null
+                : new ProgressExplanationResponse(snapshot.RecoveryReason ?? "recovery-unavailable", snapshot.RecoveryExplanation)));
     }
 
     [HttpGet("trend")]

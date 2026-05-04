@@ -1,0 +1,340 @@
+<main class="support-diagnostics-page">
+  <section class="support-shell">
+    <header>
+      <p class="eyebrow">TaskTracker / Support</p>
+      <h1>User diagnostics</h1>
+      <p class="subtitle">Read-only dispute diagnostics for account, task, XP, and streak state.</p>
+      <a class="back-link" routerLink="/dashboard">Back to dashboard</a>
+    </header>
+
+    <section class="query-panel" aria-label="Support diagnostics query">
+      <label>
+        Target user ID
+        <input
+          type="text"
+          [value]="targetUserId"
+          (input)="targetUserId = $any($event.target).value"
+          placeholder="00000000-0000-0000-0000-000000000000"
+          aria-label="Target user identifier" />
+      </label>
+
+      <label>
+        Window days
+        <input
+          type="number"
+          min="1"
+          max="90"
+          [value]="windowDays"
+          (input)="windowDays = +$any($event.target).value"
+          aria-label="Window in days" />
+      </label>
+
+      <label>
+        Marker limit
+        <input
+          type="number"
+          min="1"
+          max="50"
+          [value]="markerLimit"
+          (input)="markerLimit = +$any($event.target).value"
+          aria-label="Marker limit" />
+      </label>
+
+      <label>
+        Timeline event type
+        <select
+          [value]="timelineEventType"
+          (change)="timelineEventType = $any($event.target).value"
+          aria-label="Timeline event type">
+          @for (option of timelineEventTypes; track option.value) {
+            <option [value]="option.value">{{ option.label }}</option>
+          }
+        </select>
+      </label>
+
+      <label>
+        Timeline start date
+        <input
+          type="date"
+          [value]="timelineStartDate"
+          (input)="timelineStartDate = $any($event.target).value"
+          aria-label="Timeline start date" />
+      </label>
+
+      <label>
+        Timeline end date
+        <input
+          type="date"
+          [value]="timelineEndDate"
+          (input)="timelineEndDate = $any($event.target).value"
+          aria-label="Timeline end date" />
+      </label>
+
+      <label>
+        Timeline max items
+        <input
+          type="number"
+          min="1"
+          max="100"
+          [value]="timelineMaxItems"
+          (input)="timelineMaxItems = +$any($event.target).value"
+          aria-label="Timeline max items" />
+      </label>
+
+      <label>
+        Audit actor user ID
+        <input
+          type="text"
+          [value]="auditActorUserId"
+          (input)="auditActorUserId = $any($event.target).value"
+          placeholder="Optional actor user ID"
+          aria-label="Audit actor user ID" />
+      </label>
+
+      <label>
+        Audit action type
+        <input
+          type="text"
+          [value]="auditActionType"
+          (input)="auditActionType = $any($event.target).value"
+          placeholder="Optional action type"
+          aria-label="Audit action type" />
+      </label>
+
+      <label>
+        Audit start date
+        <input
+          type="date"
+          [value]="auditStartDate"
+          (input)="auditStartDate = $any($event.target).value"
+          aria-label="Audit start date" />
+      </label>
+
+      <label>
+        Audit end date
+        <input
+          type="date"
+          [value]="auditEndDate"
+          (input)="auditEndDate = $any($event.target).value"
+          aria-label="Audit end date" />
+      </label>
+
+      <label>
+        Audit page size
+        <input
+          type="number"
+          min="1"
+          max="100"
+          [value]="auditPageSize"
+          (input)="auditPageSize = +$any($event.target).value"
+          aria-label="Audit page size" />
+      </label>
+
+      <button type="button" class="action-button" (click)="loadDiagnostics()">Load diagnostics</button>
+    </section>
+
+    @if (validationMessage) {
+      <p class="message warning" role="alert">{{ validationMessage }}</p>
+    }
+
+    @if (state === 'loading') {
+      <section class="state-card" aria-live="polite" aria-busy="true">
+        <p>Loading support diagnostics...</p>
+      </section>
+    } @else if (state === 'error') {
+      <section class="state-card" role="alert" aria-live="assertive">
+        <p>{{ errorMessage }}</p>
+        @if (errorSupportText) {
+          <p class="state-meta">{{ errorSupportText }}</p>
+        }
+      </section>
+    } @else if (state === 'empty' && snapshot) {
+      <section class="state-card" aria-live="polite">
+        <p>No progression activity was found in the selected window.</p>
+        <p class="state-meta">Account and role metadata are shown for basic verification.</p>
+      </section>
+    }
+
+    @if (snapshot) {
+      <section class="diagnostics-grid" aria-label="Read-only support diagnostics">
+        <article class="panel">
+          <h2>Account</h2>
+          <p><strong>User ID:</strong> {{ snapshot.account.userId }}</p>
+          <p><strong>Email:</strong> {{ snapshot.account.email }}</p>
+          <p><strong>Display name:</strong> {{ snapshot.account.displayName }}</p>
+          <p><strong>Role:</strong> {{ snapshot.account.role }}</p>
+          <p><strong>Timezone:</strong> {{ snapshot.account.timeZoneId }}</p>
+          <p><strong>Locale:</strong> {{ snapshot.account.locale }}</p>
+          <p><strong>Leaderboard mode:</strong> {{ snapshot.account.leaderboardParticipationMode }}</p>
+          <p><strong>Suspicious flagged:</strong> {{ snapshot.account.isSuspiciousFlagged ? 'Yes' : 'No' }}</p>
+          <p><strong>Last modified:</strong> {{ formatDate(snapshot.account.modifiedAtUtc) }}</p>
+        </article>
+
+        <article class="panel">
+          <h2>Tasks</h2>
+          <p><strong>Total:</strong> {{ snapshot.taskState.totalCount }}</p>
+          <p><strong>Completed:</strong> {{ snapshot.taskState.completedCount }}</p>
+          <p><strong>Active:</strong> {{ snapshot.taskState.activeCount }}</p>
+          <p><strong>Last completed:</strong> {{ formatDate(snapshot.taskState.lastCompletedAtUtc) }}</p>
+
+          <h3>Recent completions</h3>
+          @if (snapshot.taskState.recentCompletions.length === 0) {
+            <p class="state-meta">No completed tasks found.</p>
+          } @else {
+            <ul>
+              @for (item of snapshot.taskState.recentCompletions; track item.taskId) {
+                <li>{{ item.title }} - {{ formatDate(item.completedAtUtc) }}</li>
+              }
+            </ul>
+          }
+        </article>
+
+        <article class="panel">
+          <h2>XP</h2>
+          <p><strong>Total XP:</strong> {{ snapshot.xpState.totalXp }}</p>
+          <p><strong>Ledger entries:</strong> {{ snapshot.xpState.ledgerEntryCount }}</p>
+          <p><strong>Last granted:</strong> {{ formatDate(snapshot.xpState.lastGrantedAtUtc) }}</p>
+          <p><strong>Reason code:</strong> {{ snapshot.xpState.outcomeReasonCode }}</p>
+          <p>{{ snapshot.xpState.outcomeExplanation }}</p>
+        </article>
+
+        <article class="panel">
+          <h2>Streak</h2>
+          <p><strong>Outcome:</strong> {{ snapshot.streakState.outcome }}</p>
+          <p><strong>Current days:</strong> {{ snapshot.streakState.currentStreakDays }}</p>
+          <p><strong>Longest days:</strong> {{ snapshot.streakState.longestStreakDays }}</p>
+          <p><strong>Timezone:</strong> {{ snapshot.streakState.timeZoneId }}</p>
+          <p><strong>Evaluated:</strong> {{ formatDate(snapshot.streakState.lastEvaluatedAtUtc) }}</p>
+          <p><strong>Reason code:</strong> {{ snapshot.streakState.outcomeReasonCode }}</p>
+          <p>{{ snapshot.streakState.outcomeExplanation }}</p>
+        </article>
+      </section>
+
+      <section class="panel marker-panel" aria-label="Recent progression markers">
+        <h2>Recent progression markers</h2>
+        <p class="state-meta">
+          Window: {{ snapshot.window.windowDays }} day(s) from {{ formatDate(snapshot.window.windowStartUtc) }}.
+          Marker limit: {{ snapshot.window.markerLimit }}.
+        </p>
+        @if (snapshot.recentMarkers.length === 0) {
+          <p>No markers in this window.</p>
+        } @else {
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">When</th>
+                <th scope="col">Type</th>
+                <th scope="col">Summary</th>
+                <th scope="col">Correlation</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (marker of snapshot.recentMarkers; track trackMarker($index)) {
+                <tr>
+                  <td>{{ formatDate(marker.occurredAtUtc) }}</td>
+                  <td>{{ marker.markerType }}</td>
+                  <td>{{ marker.summary }}</td>
+                  <td>{{ marker.correlationRef ?? marker.traceId ?? 'n/a' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+        <p class="state-meta">Trace: {{ snapshot.traceId }} | Correlation: {{ snapshot.correlationId }}</p>
+      </section>
+
+      @if (timeline) {
+        <section class="panel timeline-panel" aria-label="Support event timeline">
+          <h2>Event timeline</h2>
+          <p class="state-meta">
+            Timeline filters: {{ timeline.filters.eventType ?? 'all types' }},
+            {{ formatDate(timeline.filters.startUtc) }} to {{ formatDate(timeline.filters.endUtc) }}.
+            Showing {{ timeline.items.length }} of {{ timeline.totalCount }} event(s).
+          </p>
+
+          @if (timeline.items.length === 0) {
+            <p>No timeline events found for these filters.</p>
+          } @else {
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">When</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Outcome</th>
+                  <th scope="col">Message</th>
+                  <th scope="col">Correlation</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (event of timeline.items; track trackTimelineEvent($index)) {
+                  <tr>
+                    <td>{{ formatDate(event.occurredAtUtc) }}</td>
+                    <td>{{ event.eventType }}</td>
+                    <td>{{ event.ruleOutcome }}</td>
+                    <td>
+                      {{ event.message }}
+                      <div class="state-meta">{{ event.messageCode }} | {{ event.sourceSubsystem }}</div>
+                    </td>
+                    <td>{{ event.correlationId ?? event.traceId ?? 'n/a' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+
+          <p class="state-meta">
+            Trace: {{ timeline.traceId }} | Correlation: {{ timeline.correlationId }} | Has next page: {{ timeline.hasNextPage ? 'Yes' : 'No' }}
+          </p>
+        </section>
+      }
+
+      @if (privilegedAudits) {
+        <section class="panel audit-panel" aria-label="Privileged audit history">
+          <h2>Privileged audit history</h2>
+          <p class="state-meta">
+            Audit filters: actor {{ privilegedAudits.filters.actorUserId ?? 'all' }},
+            target {{ privilegedAudits.filters.targetUserId ?? 'all' }},
+            action {{ privilegedAudits.filters.actionType ?? 'all' }},
+            {{ formatDate(privilegedAudits.filters.startUtc) }} to {{ formatDate(privilegedAudits.filters.endUtc) }}.
+            Showing {{ privilegedAudits.items.length }} of {{ privilegedAudits.totalCount }} record(s).
+          </p>
+
+          @if (privilegedAudits.items.length === 0) {
+            <p>No privileged audit records found for these filters.</p>
+          } @else {
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">When</th>
+                  <th scope="col">Actor</th>
+                  <th scope="col">Target</th>
+                  <th scope="col">Action</th>
+                  <th scope="col">Reason</th>
+                  <th scope="col">Outcome</th>
+                  <th scope="col">Trace / Correlation</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (audit of privilegedAudits.items; track trackAuditItem($index)) {
+                  <tr>
+                    <td>{{ formatDate(audit.occurredAtUtc) }}</td>
+                    <td>{{ audit.actorRole }}:{{ audit.actorUserId }}</td>
+                    <td>{{ audit.targetUserId ?? 'n/a' }}</td>
+                    <td>{{ audit.actionType }}</td>
+                    <td>{{ audit.reasonCode }}<div class="state-meta">{{ audit.reasonText || 'No reason text' }}</div></td>
+                    <td>{{ audit.outcome }}</td>
+                    <td>{{ audit.traceId }}<div class="state-meta">{{ audit.correlationId }}</div></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+
+          <p class="state-meta">
+            Trace: {{ privilegedAudits.traceId }} | Correlation: {{ privilegedAudits.correlationId }} | Has next page: {{ privilegedAudits.hasNextPage ? 'Yes' : 'No' }}
+          </p>
+        </section>
+      }
+    }
+  </section>
+</main>

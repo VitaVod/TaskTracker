@@ -16,6 +16,15 @@ export interface AccountUpdateResponse {
   message: string;
 }
 
+export interface EmailChangeRequestPayload {
+  newEmail: string;
+  currentPassword: string;
+}
+
+export interface EmailChangeConfirmPayload {
+  token: string;
+}
+
 export interface UpdateProfilePayload {
   displayName: string;
 }
@@ -41,5 +50,13 @@ export class AccountService {
 
   updateSettings(payload: UpdateSettingsPayload): Observable<AccountUpdateResponse> {
     return this.httpClient.patch<AccountUpdateResponse>(`${this.endpoint}/settings`, payload);
+  }
+
+  requestEmailChange(payload: EmailChangeRequestPayload): Observable<AccountUpdateResponse> {
+    return this.httpClient.post<AccountUpdateResponse>(`${this.endpoint}/email-change/request`, payload);
+  }
+
+  confirmEmailChange(payload: EmailChangeConfirmPayload): Observable<AccountUpdateResponse> {
+    return this.httpClient.post<AccountUpdateResponse>(`${this.endpoint}/email-change/confirm`, payload);
   }
 }

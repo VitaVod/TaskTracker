@@ -41,7 +41,7 @@
   margin-top: 1.4rem;
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
 }
 
 .panel {
@@ -49,6 +49,17 @@
   border: 1px solid rgba(156, 247, 220, 0.25);
   padding: 1rem;
   background: rgba(5, 17, 30, 0.8);
+}
+
+.panel h3 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+.panel-divider {
+  margin: 1rem 0;
+  border: 0;
+  border-top: 1px solid rgba(156, 247, 220, 0.24);
 }
 
 form {
@@ -67,6 +78,51 @@ input {
   border: 1px solid #45718d;
   background: #0f2538;
   color: #eef7ff;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #d8e1f7;
+}
+
+.participation-group {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  border: 1px solid #45718d;
+  background: #0f2538;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.participation-group legend {
+  padding: 0 0.2rem;
+  font-size: 0.92rem;
+}
+
+.radio-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.65rem;
+  align-items: start;
+  padding: 0.45rem 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.radio-option:focus-within {
+  outline: 2px solid #fad68a;
+  outline-offset: 2px;
+}
+
+.radio-option span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.radio-option small {
+  color: #d8e1f7;
+  font-size: 0.78rem;
 }
 
 input:focus-visible,

@@ -4,6 +4,7 @@ import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import {
   CreateTaskRequest,
+  TaskListFilters,
   TaskListResponse,
   TaskListState,
   ToggleTaskCompletionResponse,
@@ -24,8 +25,33 @@ export class TaskService {
       .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));
   }
 
-  getTasks(state: TaskListState = 'all'): Observable<TaskListResponse> {
-    const query = state === 'all' ? '' : `?state=${state}`;
+  getTasks(state: TaskListState = 'all', filters?: TaskListFilters): Observable<TaskListResponse> {
+    const queryParts: string[] = [];
+    if (state !== 'all') {
+      queryParts.push(`state=${encodeURIComponent(state)}`);
+    }
+
+    if (filters?.title && filters.title.trim() !== '') {
+      queryParts.push(`title=${encodeURIComponent(filters.title.trim())}`);
+    }
+
+    if (filters?.priority) {
+      queryParts.push(`priority=${encodeURIComponent(filters.priority)}`);
+    }
+
+    if (filters?.energyLevel) {
+      queryParts.push(`energyLevel=${encodeURIComponent(filters.energyLevel)}`);
+    }
+
+    if (filters?.difficulty) {
+      queryParts.push(`difficulty=${encodeURIComponent(filters.difficulty)}`);
+    }
+
+    if (filters?.contextTag && filters.contextTag.trim() !== '') {
+      queryParts.push(`contextTag=${encodeURIComponent(filters.contextTag.trim().toLowerCase())}`);
+    }
+
+    const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
     return this.httpClient
       .get<TaskListResponse>(`${this.endpoint}${query}`)
       .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));

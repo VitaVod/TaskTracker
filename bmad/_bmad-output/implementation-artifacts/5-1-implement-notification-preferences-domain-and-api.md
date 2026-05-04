@@ -1,6 +1,6 @@
 # Story 5.1: Implement Notification Preferences Domain and API
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -17,35 +17,35 @@ so that communication matches my needs.
 
 ## Tasks / Subtasks
 
-- [ ] Add notification preference domain model and persistence mapping (AC: 1, 2)
-  - [ ] Add user-scoped notification preference fields/entity in `TaskTrackerDbContext` with explicit defaults for reminder and account-notification channels.
-  - [ ] Add EF Core migration with SQL Server-safe defaults and non-null constraints to prevent ambiguous preference state.
-  - [ ] Keep existing user/account schema behavior stable (no breaking changes to existing account profile/settings contracts).
+- [x] Add notification preference domain model and persistence mapping (AC: 1, 2)
+  - [x] Add user-scoped notification preference fields/entity in `TaskTrackerDbContext` with explicit defaults for reminder and account-notification channels.
+  - [x] Add EF Core migration with SQL Server-safe defaults and non-null constraints to prevent ambiguous preference state.
+  - [x] Keep existing user/account schema behavior stable (no breaking changes to existing account profile/settings contracts).
 
-- [ ] Implement authenticated preferences read and update API contracts (AC: 1, 2)
-  - [ ] Add API contracts under `/api/v1` for reading and updating notification preferences in a deterministic shape.
-  - [ ] Enforce authenticated, ownership-scoped access only (no externally supplied user id).
-  - [ ] Return RFC 7807 Problem Details with stable `code` and `traceId` for validation and authorization failures.
+- [x] Implement authenticated preferences read and update API contracts (AC: 1, 2)
+  - [x] Add API contracts under `/api/v1` for reading and updating notification preferences in a deterministic shape.
+  - [x] Enforce authenticated, ownership-scoped access only (no externally supplied user id).
+  - [x] Return RFC 7807 Problem Details with stable `code` and `traceId` for validation and authorization failures.
 
-- [ ] Implement defaults and validation guardrails in backend application flow (AC: 2)
-  - [ ] Enforce supported preference values only (for example, reminder enabled/disabled and supported reminder cadence values if present).
-  - [ ] Ensure missing optional fields resolve to documented defaults rather than null/implicit behavior drift.
-  - [ ] Preserve idempotent update semantics so repeated identical payloads do not create divergent state.
+- [x] Implement defaults and validation guardrails in backend application flow (AC: 2)
+  - [x] Enforce supported preference values only (for example, reminder enabled/disabled and supported reminder cadence values if present).
+  - [x] Ensure missing optional fields resolve to documented defaults rather than null/implicit behavior drift.
+  - [x] Preserve idempotent update semantics so repeated identical payloads do not create divergent state.
 
-- [ ] Integrate with existing account/settings and email foundations without duplicating behavior (AC: 1, 2)
-  - [ ] Reuse existing auth/account ownership, logging, and validation patterns from `AccountController` and account validators.
-  - [ ] Reuse transactional email abstractions from Story 1.6 (`ITransactionalEmailService`, result semantics) as the baseline for downstream stories.
-  - [ ] Avoid introducing reminder dispatch logic in this story; focus only on preference domain and API foundation required by Story 5.2.
+- [x] Integrate with existing account/settings and email foundations without duplicating behavior (AC: 1, 2)
+  - [x] Reuse existing auth/account ownership, logging, and validation patterns from `AccountController` and account validators.
+  - [x] Reuse transactional email abstractions from Story 1.6 (`ITransactionalEmailService`, result semantics) as the baseline for downstream stories.
+  - [x] Avoid introducing reminder dispatch logic in this story; focus only on preference domain and API foundation required by Story 5.2.
 
-- [ ] Add backend tests for persistence, defaults, and authz constraints (AC: 1, 2)
-  - [ ] Integration tests for authenticated read/update success and persistence across requests.
-  - [ ] Integration tests for unauthorized/cross-user access rejection and stable Problem Details shape.
-  - [ ] Tests for default value behavior on first read and invalid payload rejection.
+- [x] Add backend tests for persistence, defaults, and authz constraints (AC: 1, 2)
+  - [x] Integration tests for authenticated read/update success and persistence across requests.
+  - [x] Integration tests for unauthorized/cross-user access rejection and stable Problem Details shape.
+  - [x] Tests for default value behavior on first read and invalid payload rejection.
 
-- [ ] Add frontend service/model surface for Story 5 follow-up consumption (AC: 1)
-  - [ ] Add typed client models/service methods in Angular shared services for notification preferences endpoints.
-  - [ ] Keep account settings feature wiring minimal and non-breaking; full UX expansion can continue in later story scope.
-  - [ ] Add unit tests for the new service contract mapping and error behavior.
+- [x] Add frontend service/model surface for Story 5 follow-up consumption (AC: 1)
+  - [x] Add typed client models/service methods in Angular shared services for notification preferences endpoints.
+  - [x] Keep account settings feature wiring minimal and non-breaking; full UX expansion can continue in later story scope.
+  - [x] Add unit tests for the new service contract mapping and error behavior.
 
 ## Dev Notes
 
@@ -109,7 +109,29 @@ GPT-5.3-Codex
 
 ### Completion Notes List
 
+- Added `NotificationPreferencesController` with authenticated `/api/v1/notifications/preferences` GET/PATCH endpoints and deterministic response shape.
+- Added notification preference validator and contracts with strict allowed-field/value checks and RFC 7807 Problem Details (`code`, `traceId`).
+- Extended `User` + EF configuration with explicit SQL-safe defaults and non-null columns for reminder/account preferences.
+- Added EF Core migration `AddNotificationPreferencesForStory51` including SQL Server defaults (`daily`, `true`, `true`).
+- Added backend integration coverage for defaults, persistence, idempotent update behavior, unauthorized access, and invalid payloads.
+- Added Angular typed models and service APIs with unit tests for contract mapping and error-path assertions.
+- Verified backend tests via `dotnet test TaskTracker.sln` and frontend service tests via `npx ng test --watch=false --browsers=ChromeHeadless --include="src/app/shared/services/notification-preferences.service.spec.ts"`.
+
 ### File List
 
 - _bmad-output/implementation-artifacts/5-1-implement-notification-preferences-domain-and-api.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
+- task-tracker-api/TaskTracker.Api/Controllers/NotificationPreferencesController.cs
+- task-tracker-api/TaskTracker.Api/Features/Notifications/Contracts/NotificationPreferenceContracts.cs
+- task-tracker-api/TaskTracker.Api/Features/Notifications/Validation/NotificationPreferencesValidator.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Entities/NotificationReminderCadence.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Entities/User.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/TaskTrackerDbContext.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Migrations/20260430102730_AddNotificationPreferencesForStory51.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Migrations/20260430102730_AddNotificationPreferencesForStory51.Designer.cs
+- task-tracker-api/TaskTracker.Api/Infrastructure/Persistence/Migrations/TaskTrackerDbContextModelSnapshot.cs
+- task-tracker-api/TaskTracker.Api/Program.cs
+- task-tracker-api/tests/TaskTracker.Api.Tests/Integration/NotificationPreferencesControllerTests.cs
+- task-tracker-web/src/app/shared/models/notification-preferences.models.ts
+- task-tracker-web/src/app/shared/services/notification-preferences.service.ts
+- task-tracker-web/src/app/shared/services/notification-preferences.service.spec.ts

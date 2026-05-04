@@ -29,6 +29,9 @@
 
 .header-actions {
   margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .back-link {

@@ -49,6 +49,11 @@ describe('CreateTaskComponent', () => {
       dueAtUtc: futureDueAtUtc,
       priority: 'medium',
       category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: 'office',
+      effortPoints: 5,
+      predictedDurationMinutes: 60,
       isCompleted: false,
       createdAtUtc: '2026-04-25T11:30:12Z',
       updatedAtUtc: '2026-04-25T11:30:12Z'
@@ -59,7 +64,11 @@ describe('CreateTaskComponent', () => {
       description: ' Draft story priorities ',
       dueAtUtc: `${futureLocalDueAt.getFullYear()}-${`${futureLocalDueAt.getMonth() + 1}`.padStart(2, '0')}-${`${futureLocalDueAt.getDate()}`.padStart(2, '0')}T18:00`,
       priority: 'medium',
-      category: 'work'
+      category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: ' Office ',
+      effortPoints: 5
     });
 
     await component.submit();
@@ -71,6 +80,8 @@ describe('CreateTaskComponent', () => {
       dueAtUtc: string | null;
       priority: string;
       category: string;
+      contextTag: string | null;
+      effortPoints: number | null;
     };
 
     expect(sentPayload.title).toBe('Plan sprint backlog');
@@ -78,6 +89,8 @@ describe('CreateTaskComponent', () => {
     expect(sentPayload.category).toBe('work');
     expect(sentPayload.priority).toBe('medium');
     expect(sentPayload.dueAtUtc).toBe(futureDueAtUtc);
+    expect(sentPayload.contextTag).toBe('office');
+    expect(sentPayload.effortPoints).toBe(5);
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 
@@ -94,12 +107,21 @@ describe('CreateTaskComponent', () => {
       description: '',
       dueAtUtc: '',
       priority: 'medium',
-      category: 'work'
+      category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: '',
+      effortPoints: null
     });
 
     await component.submit();
 
     expect(component.errorMessage).toBe('Validation failed');
     expect(component.fieldErrors['title'][0]).toContain('required');
+  });
+
+  it('limits description textarea resizing to vertical only', () => {
+    const descriptionTextarea = fixture.nativeElement.querySelector('textarea#description') as HTMLTextAreaElement;
+    expect(descriptionTextarea.getAttribute('style')).toContain('resize: vertical');
   });
 });

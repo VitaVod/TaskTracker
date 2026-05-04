@@ -76,4 +76,6 @@ public enum PasswordResetWithRecoveryOutcome
 
 public record PasswordResetWithRecoveryResult(
     PasswordResetWithRecoveryOutcome Outcome,
-    string? Error);
+    string? Error,
+    Guid? UserId = null,
+    string? Email = null);

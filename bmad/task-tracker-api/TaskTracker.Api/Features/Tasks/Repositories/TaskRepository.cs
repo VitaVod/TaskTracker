@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using TaskTracker.Api.Features.SharedViews.Caching;
@@ -17,8 +18,7 @@ public class TaskRepository(
     ILogger<TaskRepository> logger) : ITaskRepository
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> CompletionLocks = new();
-
-    private const int CompletionXpAmount = 10;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> IntegrationSyncLocks = new();
 
     public async Task CreateAsync(TaskItem task, CancellationToken cancellationToken)
     {
@@ -29,6 +29,10 @@ public class TaskRepository(
     public async Task<IReadOnlyList<TaskItem>> ListOwnedByStateAsync(
         Guid userId,
         TaskListState state,
+        string? title,
+        string? priority,
+        string? energyLevel,
+        string? contextTag,
         CancellationToken cancellationToken)
     {
         var query = dbContext.Tasks
@@ -41,6 +45,26 @@ public class TaskRepository(
             TaskListState.Completed => query.Where(task => task.IsCompleted),
             _ => query
         };
+
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            query = query.Where(task => task.Title.Contains(title));
+        }
+
+        if (!string.IsNullOrWhiteSpace(priority))
+        {
+            query = query.Where(task => task.Priority == priority);
+        }
+
+        if (!string.IsNullOrWhiteSpace(energyLevel))
+        {
+            query = query.Where(task => task.EnergyLevel == ParseEnergyLevel(energyLevel));
+        }
+
+        if (!string.IsNullOrWhiteSpace(contextTag))
+        {
+            query = query.Where(task => task.ContextTag == contextTag);
+        }
 
         return await query
             .OrderBy(task => task.IsCompleted)
@@ -79,6 +103,10 @@ public class TaskRepository(
         DateTime? dueAtUtc,
         string priority,
         string category,
+        TaskDifficulty difficulty,
+        TaskEnergyLevel energyLevel,
+        string? contextTag,
+        int? effortPoints,
         DateTime updatedAtUtc,
         CancellationToken cancellationToken)
     {
@@ -98,6 +126,10 @@ public class TaskRepository(
         task.DueAtUtc = dueAtUtc;
         task.Priority = priority;
         task.Category = category;
+        task.Difficulty = difficulty;
+        task.EnergyLevel = energyLevel;
+        task.ContextTag = contextTag;
+        task.EffortPoints = effortPoints;
         task.UpdatedAtUtc = updatedAtUtc;
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -185,12 +217,16 @@ public class TaskRepository(
                 task.UpdatedAtUtc = updatedAtUtc;
             }
 
+            var completionEventName = stateChanged
+                ? (isCompleted ? "TaskCompleted" : "TaskReopened")
+                : "TaskCompletionSet";
+
             var completionEvent = new TaskCompletionEvent
             {
                 Id = Guid.NewGuid(),
                 TaskId = task.Id,
                 OwnerId = task.UserId,
-                EventName = isCompleted && stateChanged ? "TaskCompleted" : "TaskCompletionSet",
+                EventName = completionEventName,
                 ResultingIsCompleted = isCompleted,
                 IdempotencyKey = idempotencyKey,
                 OccurredAtUtc = updatedAtUtc,
@@ -199,11 +235,15 @@ public class TaskRepository(
 
             dbContext.TaskCompletionEvents.Add(completionEvent);
 
-            // Progression should only react to true completion transitions, never duplicate retries.
-            var isEligibleForXp = isCompleted && stateChanged;
+            // Progression should react exactly once to true state transitions.
+            var isEligibleForXp = stateChanged;
             XpLedgerEntry? xpLedgerEntry = null;
             if (isEligibleForXp)
             {
+                var completionXpAmount = isCompleted
+                    ? ResolveCompletionXpAmount(task.Difficulty)
+                    : await ResolveReopenXpAmountAsync(task.UserId, task.Id, task.Difficulty, cancellationToken);
+
                 xpLedgerEntry = new XpLedgerEntry
                 {
                     Id = Guid.NewGuid(),
@@ -212,7 +252,7 @@ public class TaskRepository(
                     TaskCompletionEventId = completionEvent.Id,
                     EventName = completionEvent.EventName,
                     IdempotencyKey = idempotencyKey,
-                    XpGranted = CompletionXpAmount,
+                    XpGranted = isCompleted ? completionXpAmount : -completionXpAmount,
                     OccurredAtUtc = updatedAtUtc,
                     CreatedAtUtc = updatedAtUtc
                 };
@@ -220,20 +260,32 @@ public class TaskRepository(
                 dbContext.XpLedgerEntries.Add(xpLedgerEntry);
             }
 
+            var existingSnapshot = await dbContext.UserStreakSnapshots
+                .FirstOrDefaultAsync(snapshot => snapshot.OwnerId == userId, cancellationToken);
+
+            var recoveryTokenState = ResolveRecoveryTokenState(
+                existingSnapshot,
+                completionEvent.OccurredAtUtc,
+                resolvedTimeZoneId);
+
             var streakOutcome = await EvaluateStreakAsync(
                 userId,
+                task.Id,
                 completionEvent.OccurredAtUtc,
                 completionEvent.ResultingIsCompleted,
                 completionEvent.EventName,
+                recoveryTokenState.AvailableTokens,
                 resolvedTimeZoneId,
                 cancellationToken);
 
-            await UpsertStreakSnapshotAsync(
+            UpsertStreakSnapshotAsync(
+                existingSnapshot,
                 userId,
                 completionEvent.Id,
                 traceId,
                 updatedAtUtc,
                 resolvedTimeZoneId,
+                recoveryTokenState,
                 streakOutcome,
                 cancellationToken);
 
@@ -344,9 +396,399 @@ public class TaskRepository(
             return new TaskDeleteResult(TaskDeleteStatus.Forbidden);
         }
 
+        if (task.IsCompleted)
+        {
+            return new TaskDeleteResult(TaskDeleteStatus.CompletedTaskDeletionBlocked);
+        }
+
         dbContext.Tasks.Remove(task);
         await dbContext.SaveChangesAsync(cancellationToken);
         return new TaskDeleteResult(TaskDeleteStatus.Deleted);
+    }
+
+    public async Task<IntegrationTaskSyncResult> UpsertOwnedFromIntegrationAsync(
+        Guid ownerUserId,
+        string integrationId,
+        string idempotencyKey,
+        string externalTaskId,
+        string title,
+        string description,
+        DateTime? dueAtUtc,
+        string priority,
+        string category,
+        TaskDifficulty difficulty,
+        TaskEnergyLevel energyLevel,
+        string? contextTag,
+        int? effortPoints,
+        bool isCompleted,
+        string correlationId,
+        string traceId,
+        DateTime updatedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        idempotencyKey = NormalizeIntegrationIdempotencyKey(idempotencyKey);
+        var lockKey = $"{ownerUserId:N}:{integrationId}:{idempotencyKey}";
+        var syncLock = IntegrationSyncLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
+        await syncLock.WaitAsync(cancellationToken);
+
+        try
+        {
+
+        var existingReplay = await dbContext.IntegrationEventIdempotencyRecords
+            .AsNoTracking()
+            .FirstOrDefaultAsync(record =>
+                record.OwnerUserId == ownerUserId
+                && record.IntegrationId == integrationId
+                && record.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+
+        if (existingReplay is not null)
+        {
+            var replayTask = await dbContext.Tasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(task => task.Id == existingReplay.TaskId && task.UserId == ownerUserId, cancellationToken);
+
+            if (replayTask is null)
+            {
+                return new IntegrationTaskSyncResult(IntegrationTaskSyncStatus.Forbidden, null, null, null);
+            }
+
+            return new IntegrationTaskSyncResult(
+                IntegrationTaskSyncStatus.IdempotentReplay,
+                replayTask,
+                existingReplay.Operation,
+                existingReplay.ExternalTaskId);
+        }
+
+        var binding = await dbContext.IntegrationTaskSyncBindings
+            .FirstOrDefaultAsync(existingBinding =>
+                existingBinding.OwnerUserId == ownerUserId
+                && existingBinding.IntegrationId == integrationId
+                && existingBinding.ExternalTaskId == externalTaskId,
+                cancellationToken);
+
+        if (binding is null)
+        {
+            var createdTask = new TaskItem
+            {
+                Id = Guid.NewGuid(),
+                UserId = ownerUserId,
+                Title = title,
+                Description = description,
+                DueAtUtc = dueAtUtc,
+                Priority = priority,
+                Category = category,
+                Difficulty = difficulty,
+                EnergyLevel = energyLevel,
+                ContextTag = contextTag,
+                EffortPoints = effortPoints,
+                IsCompleted = isCompleted,
+                CreatedAtUtc = updatedAtUtc,
+                UpdatedAtUtc = updatedAtUtc
+            };
+
+            var createdBinding = new IntegrationTaskSyncBinding
+            {
+                Id = Guid.NewGuid(),
+                OwnerUserId = ownerUserId,
+                IntegrationId = integrationId,
+                ExternalTaskId = externalTaskId,
+                TaskId = createdTask.Id,
+                CreatedAtUtc = updatedAtUtc,
+                UpdatedAtUtc = updatedAtUtc
+            };
+
+            dbContext.Tasks.Add(createdTask);
+            dbContext.IntegrationTaskSyncBindings.Add(createdBinding);
+
+            var createRecord = new IntegrationEventIdempotencyRecord
+            {
+                Id = Guid.NewGuid(),
+                OwnerUserId = ownerUserId,
+                IntegrationId = integrationId,
+                IdempotencyKey = idempotencyKey,
+                TaskId = createdTask.Id,
+                ExternalTaskId = externalTaskId,
+                Operation = "created",
+                CorrelationId = correlationId,
+                TraceId = traceId,
+                ProcessedAtUtc = updatedAtUtc,
+                CreatedAtUtc = updatedAtUtc
+            };
+
+            dbContext.IntegrationEventIdempotencyRecords.Add(createRecord);
+
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return new IntegrationTaskSyncResult(
+                    IntegrationTaskSyncStatus.Created,
+                    createdTask,
+                    "created",
+                    externalTaskId);
+            }
+            catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                dbContext.ChangeTracker.Clear();
+
+                var replay = await dbContext.IntegrationEventIdempotencyRecords
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(record =>
+                        record.OwnerUserId == ownerUserId
+                        && record.IntegrationId == integrationId
+                        && record.IdempotencyKey == idempotencyKey,
+                        cancellationToken);
+
+                if (replay is not null)
+                {
+                    var replayTask = await dbContext.Tasks
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(task => task.Id == replay.TaskId && task.UserId == ownerUserId, cancellationToken);
+
+                    if (replayTask is not null)
+                    {
+                        return new IntegrationTaskSyncResult(
+                            IntegrationTaskSyncStatus.IdempotentReplay,
+                            replayTask,
+                            replay.Operation,
+                            replay.ExternalTaskId);
+                    }
+                }
+
+                binding = await dbContext.IntegrationTaskSyncBindings
+                    .FirstOrDefaultAsync(existingBinding =>
+                        existingBinding.OwnerUserId == ownerUserId
+                        && existingBinding.IntegrationId == integrationId
+                        && existingBinding.ExternalTaskId == externalTaskId,
+                        cancellationToken);
+
+                if (binding is null)
+                {
+                    throw;
+                }
+            }
+        }
+
+        var task = await dbContext.Tasks.FirstOrDefaultAsync(existingTask => existingTask.Id == binding.TaskId, cancellationToken);
+        if (task is null)
+        {
+            var recoveredTask = new TaskItem
+            {
+                Id = Guid.NewGuid(),
+                UserId = ownerUserId,
+                Title = title,
+                Description = description,
+                DueAtUtc = dueAtUtc,
+                Priority = priority,
+                Category = category,
+                Difficulty = difficulty,
+                EnergyLevel = energyLevel,
+                ContextTag = contextTag,
+                EffortPoints = effortPoints,
+                IsCompleted = isCompleted,
+                CreatedAtUtc = updatedAtUtc,
+                UpdatedAtUtc = updatedAtUtc
+            };
+
+            binding.TaskId = recoveredTask.Id;
+            binding.UpdatedAtUtc = updatedAtUtc;
+
+            dbContext.Tasks.Add(recoveredTask);
+
+            dbContext.IntegrationEventIdempotencyRecords.Add(new IntegrationEventIdempotencyRecord
+            {
+                Id = Guid.NewGuid(),
+                OwnerUserId = ownerUserId,
+                IntegrationId = integrationId,
+                IdempotencyKey = idempotencyKey,
+                TaskId = recoveredTask.Id,
+                ExternalTaskId = externalTaskId,
+                Operation = "created",
+                CorrelationId = correlationId,
+                TraceId = traceId,
+                ProcessedAtUtc = updatedAtUtc,
+                CreatedAtUtc = updatedAtUtc
+            });
+
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return new IntegrationTaskSyncResult(
+                    IntegrationTaskSyncStatus.Created,
+                    recoveredTask,
+                    "created",
+                    externalTaskId);
+            }
+            catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                dbContext.ChangeTracker.Clear();
+
+                var replay = await dbContext.IntegrationEventIdempotencyRecords
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(record =>
+                        record.OwnerUserId == ownerUserId
+                        && record.IntegrationId == integrationId
+                        && record.IdempotencyKey == idempotencyKey,
+                        cancellationToken);
+
+                if (replay is not null)
+                {
+                    var replayTask = await dbContext.Tasks
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(existingTask => existingTask.Id == replay.TaskId && existingTask.UserId == ownerUserId, cancellationToken);
+
+                    if (replayTask is not null)
+                    {
+                        return new IntegrationTaskSyncResult(
+                            IntegrationTaskSyncStatus.IdempotentReplay,
+                            replayTask,
+                            replay.Operation,
+                            replay.ExternalTaskId);
+                    }
+                }
+
+                throw;
+            }
+        }
+
+        if (task.UserId != ownerUserId)
+        {
+            return new IntegrationTaskSyncResult(IntegrationTaskSyncStatus.Forbidden, null, null, null);
+        }
+
+        task.Title = title;
+        task.Description = description;
+        task.DueAtUtc = dueAtUtc;
+        task.Priority = priority;
+        task.Category = category;
+        task.Difficulty = difficulty;
+        task.EnergyLevel = energyLevel;
+        task.ContextTag = contextTag;
+        task.EffortPoints = effortPoints;
+        task.IsCompleted = isCompleted;
+        task.UpdatedAtUtc = updatedAtUtc;
+
+        binding.UpdatedAtUtc = updatedAtUtc;
+
+        dbContext.IntegrationEventIdempotencyRecords.Add(new IntegrationEventIdempotencyRecord
+        {
+            Id = Guid.NewGuid(),
+            OwnerUserId = ownerUserId,
+            IntegrationId = integrationId,
+            IdempotencyKey = idempotencyKey,
+            TaskId = task.Id,
+            ExternalTaskId = externalTaskId,
+            Operation = "updated",
+            CorrelationId = correlationId,
+            TraceId = traceId,
+            ProcessedAtUtc = updatedAtUtc,
+            CreatedAtUtc = updatedAtUtc
+        });
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return new IntegrationTaskSyncResult(
+                IntegrationTaskSyncStatus.Updated,
+                task,
+                "updated",
+                externalTaskId);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            dbContext.ChangeTracker.Clear();
+
+            var replay = await dbContext.IntegrationEventIdempotencyRecords
+                .AsNoTracking()
+                .FirstOrDefaultAsync(record =>
+                    record.OwnerUserId == ownerUserId
+                    && record.IntegrationId == integrationId
+                    && record.IdempotencyKey == idempotencyKey,
+                    cancellationToken);
+
+            if (replay is not null)
+            {
+                var replayTask = await dbContext.Tasks
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(existingTask => existingTask.Id == replay.TaskId && existingTask.UserId == ownerUserId, cancellationToken);
+
+                if (replayTask is not null)
+                {
+                    return new IntegrationTaskSyncResult(
+                        IntegrationTaskSyncStatus.IdempotentReplay,
+                        replayTask,
+                        replay.Operation,
+                        replay.ExternalTaskId);
+                }
+            }
+
+            throw;
+        }
+        }
+        finally
+        {
+            syncLock.Release();
+
+            // Keep lock registry bounded when there is no queued waiter.
+            if (syncLock.CurrentCount == 1)
+            {
+                IntegrationSyncLocks.TryRemove(lockKey, out _);
+            }
+        }
+    }
+
+    private static string NormalizeIntegrationIdempotencyKey(string idempotencyKey)
+    {
+        var trimmed = idempotencyKey.Trim();
+        return Guid.TryParse(trimmed, out var parsed)
+            ? parsed.ToString("D")
+            : trimmed;
+    }
+
+    private static TaskEnergyLevel ParseEnergyLevel(string energyLevel)
+    {
+        return energyLevel.Trim().ToLowerInvariant() switch
+        {
+            "low" => TaskEnergyLevel.Low,
+            "high" => TaskEnergyLevel.High,
+            _ => TaskEnergyLevel.Medium
+        };
+    }
+
+    private async Task<int> ResolveReopenXpAmountAsync(
+        Guid userId,
+        Guid taskId,
+        TaskDifficulty fallbackDifficulty,
+        CancellationToken cancellationToken)
+    {
+        var lastAwardedXp = await dbContext.XpLedgerEntries
+            .AsNoTracking()
+            .Where(entry => entry.OwnerId == userId
+                && entry.TaskId == taskId
+                && entry.XpGranted > 0)
+            .OrderByDescending(entry => entry.OccurredAtUtc)
+            .ThenByDescending(entry => entry.CreatedAtUtc)
+            .ThenByDescending(entry => entry.Id)
+            .Select(entry => (int?)entry.XpGranted)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (lastAwardedXp is > 0)
+        {
+            return lastAwardedXp.Value;
+        }
+
+        // Fall back to deterministic mapping if historical positive award is unavailable.
+        return ResolveCompletionXpAmount(fallbackDifficulty);
+    }
+
+    private static int ResolveCompletionXpAmount(TaskDifficulty difficulty)
+    {
+        return difficulty switch
+        {
+            TaskDifficulty.Hard => 30,
+            TaskDifficulty.Medium => 20,
+            _ => 10
+        };
     }
 
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)
@@ -373,7 +815,7 @@ public class TaskRepository(
             completionEvent.Id,
             xpLedgerEntry?.Id,
             xpLedgerEntry?.XpGranted ?? 0,
-            string.Equals(completionEvent.EventName, "TaskCompleted", StringComparison.Ordinal),
+            xpLedgerEntry is not null,
             idempotentReplay,
             idempotencyKey,
             streakEvaluation.Outcome,
@@ -402,7 +844,9 @@ public class TaskRepository(
                 snapshot.CurrentStreakDays,
                 snapshot.LongestStreakDays,
                 snapshot.EvaluationWindowStartUtc,
-                snapshot.EvaluationWindowEndUtc);
+                snapshot.EvaluationWindowEndUtc,
+                RecoveryTokenConsumed: false,
+                RemainingRecoveryTokens: snapshot.RecoveryTokenBalance);
 
             return BuildProgressionOutcome(
                 completionEvent,
@@ -415,9 +859,11 @@ public class TaskRepository(
 
         var streakEvaluation = await EvaluateStreakAsync(
             completionEvent.OwnerId,
+            completionEvent.TaskId,
             completionEvent.OccurredAtUtc,
             completionEvent.ResultingIsCompleted,
             completionEvent.EventName,
+            availableRecoveryTokens: 0,
             timeZoneId,
             cancellationToken);
 
@@ -432,42 +878,101 @@ public class TaskRepository(
 
     private async Task<StreakEvaluationResult> EvaluateStreakAsync(
         Guid userId,
+        Guid taskId,
         DateTime occurredAtUtc,
         bool resultingIsCompleted,
         string eventName,
+        int availableRecoveryTokens,
         string timeZoneId,
         CancellationToken cancellationToken)
     {
-        var completionOccurredAtUtc = await dbContext.TaskCompletionEvents
+        var completionEvents = await dbContext.TaskCompletionEvents
             .AsNoTracking()
-            .Where(completionEvent => completionEvent.OwnerId == userId && completionEvent.EventName == "TaskCompleted")
-            .Select(completionEvent => completionEvent.OccurredAtUtc)
+            .Where(completionEvent => completionEvent.OwnerId == userId)
+            .Select(completionEvent => new CompletionStateEvent(
+                completionEvent.TaskId,
+                completionEvent.EventName,
+                completionEvent.ResultingIsCompleted,
+                completionEvent.OccurredAtUtc,
+                completionEvent.CreatedAtUtc,
+                completionEvent.Id))
             .ToListAsync(cancellationToken);
 
-        if (string.Equals(eventName, "TaskCompleted", StringComparison.Ordinal))
-        {
-            completionOccurredAtUtc.Add(occurredAtUtc);
-        }
+        completionEvents.Add(new CompletionStateEvent(
+            taskId,
+            eventName,
+            resultingIsCompleted,
+            occurredAtUtc,
+            occurredAtUtc,
+            Guid.Empty));
+
+        var effectiveCompletionOccurredAtUtc = BuildEffectiveCompletionOccurredAtUtc(completionEvents);
 
         return streakRuleEngine.Evaluate(
             timeZoneId,
             occurredAtUtc,
             resultingIsCompleted,
-            completionOccurredAtUtc);
+            effectiveCompletionOccurredAtUtc,
+            availableRecoveryTokens);
     }
 
-    private async Task UpsertStreakSnapshotAsync(
+    private static IReadOnlyCollection<DateTime> BuildEffectiveCompletionOccurredAtUtc(
+        IReadOnlyCollection<CompletionStateEvent> completionEvents)
+    {
+        var effectiveCompletionOccurredAtUtc = new List<DateTime>();
+
+        foreach (var taskEvents in completionEvents
+                     .GroupBy(completionEvent => completionEvent.TaskId)
+                     .Select(group => group
+                         .OrderBy(completionEvent => completionEvent.OccurredAtUtc)
+                         .ThenBy(completionEvent => completionEvent.CreatedAtUtc)
+                         .ThenBy(completionEvent => completionEvent.EventId)))
+        {
+            var taskEffectiveCompletions = new List<DateTime>();
+
+            foreach (var completionEvent in taskEvents)
+            {
+                if (string.Equals(completionEvent.EventName, "TaskCompleted", StringComparison.Ordinal))
+                {
+                    taskEffectiveCompletions.Add(completionEvent.OccurredAtUtc);
+                    continue;
+                }
+
+                var reopensTask = string.Equals(completionEvent.EventName, "TaskReopened", StringComparison.Ordinal)
+                    || (string.Equals(completionEvent.EventName, "TaskCompletionSet", StringComparison.Ordinal)
+                        && !completionEvent.ResultingIsCompleted);
+
+                if (reopensTask && taskEffectiveCompletions.Count > 0)
+                {
+                    taskEffectiveCompletions.RemoveAt(taskEffectiveCompletions.Count - 1);
+                }
+            }
+
+            effectiveCompletionOccurredAtUtc.AddRange(taskEffectiveCompletions);
+        }
+
+        return effectiveCompletionOccurredAtUtc;
+    }
+
+    private sealed record CompletionStateEvent(
+        Guid TaskId,
+        string EventName,
+        bool ResultingIsCompleted,
+        DateTime OccurredAtUtc,
+        DateTime CreatedAtUtc,
+        Guid EventId);
+
+    private void UpsertStreakSnapshotAsync(
+        UserStreakSnapshot? snapshot,
         Guid ownerId,
         Guid completionEventId,
         string traceId,
         DateTime evaluatedAtUtc,
         string timeZoneId,
+        RecoveryTokenState recoveryTokenState,
         StreakEvaluationResult streakEvaluation,
         CancellationToken cancellationToken)
     {
-        var snapshot = await dbContext.UserStreakSnapshots
-            .FirstOrDefaultAsync(existingSnapshot => existingSnapshot.OwnerId == ownerId, cancellationToken);
-
         if (snapshot is null)
         {
             snapshot = new UserStreakSnapshot
@@ -484,10 +989,90 @@ public class TaskRepository(
         snapshot.TimeZoneId = timeZoneId;
         snapshot.EvaluationWindowStartUtc = streakEvaluation.EvaluationWindowStartUtc;
         snapshot.EvaluationWindowEndUtc = streakEvaluation.EvaluationWindowEndUtc;
+        snapshot.RecoveryTokenBalance = streakEvaluation.RemainingRecoveryTokens;
+        snapshot.RecoveryTokenWeekKey = recoveryTokenState.WeekKey;
+        if (recoveryTokenState.GrantedThisEvaluation)
+        {
+            snapshot.LastRecoveryTokenGrantedAtUtc = evaluatedAtUtc;
+            dbContext.StreakRecoveryTokenEvents.Add(new StreakRecoveryTokenEvent
+            {
+                Id = Guid.NewGuid(),
+                OwnerId = ownerId,
+                EventType = StreakRecoveryTokenEventType.Granted,
+                TimeZoneId = timeZoneId,
+                LocalDate = recoveryTokenState.LocalDate,
+                WeekKey = recoveryTokenState.WeekKey,
+                BalanceAfter = recoveryTokenState.AvailableTokens,
+                OccurredAtUtc = evaluatedAtUtc,
+                CompletionEventId = completionEventId,
+                TraceId = traceId
+            });
+        }
+
+        if (streakEvaluation.RecoveryTokenConsumed)
+        {
+            snapshot.LastRecoveryTokenConsumedAtUtc = evaluatedAtUtc;
+            dbContext.StreakRecoveryTokenEvents.Add(new StreakRecoveryTokenEvent
+            {
+                Id = Guid.NewGuid(),
+                OwnerId = ownerId,
+                EventType = StreakRecoveryTokenEventType.Consumed,
+                TimeZoneId = timeZoneId,
+                LocalDate = recoveryTokenState.LocalDate,
+                WeekKey = recoveryTokenState.WeekKey,
+                BalanceAfter = streakEvaluation.RemainingRecoveryTokens,
+                OccurredAtUtc = evaluatedAtUtc,
+                CompletionEventId = completionEventId,
+                TraceId = traceId
+            });
+        }
+
         snapshot.LastEvaluatedEventId = completionEventId;
         snapshot.LastEvaluationTraceId = traceId;
         snapshot.LastEvaluatedAtUtc = evaluatedAtUtc;
     }
+
+    private static RecoveryTokenState ResolveRecoveryTokenState(
+        UserStreakSnapshot? snapshot,
+        DateTime evaluationOccurredAtUtc,
+        string timeZoneId)
+    {
+        var timeZone = TZConvert.GetTimeZoneInfo(timeZoneId);
+        var evaluationLocalDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(EnsureUtc(evaluationOccurredAtUtc), timeZone));
+        var weekKey = BuildIsoWeekKey(evaluationLocalDate);
+        var previousWeekKey = snapshot?.RecoveryTokenWeekKey ?? string.Empty;
+        var grantedThisEvaluation = !string.Equals(previousWeekKey, weekKey, StringComparison.Ordinal);
+        var availableTokens = grantedThisEvaluation
+            ? 1
+            : Math.Clamp(snapshot?.RecoveryTokenBalance ?? 0, 0, 1);
+
+        return new RecoveryTokenState(
+            availableTokens,
+            grantedThisEvaluation,
+            weekKey,
+            evaluationLocalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+    }
+
+    private static string BuildIsoWeekKey(DateOnly localDate)
+    {
+        var dateTime = localDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        var isoYear = ISOWeek.GetYear(dateTime);
+        var isoWeek = ISOWeek.GetWeekOfYear(dateTime);
+        return $"{isoYear:D4}-W{isoWeek:D2}";
+    }
+
+    private static DateTime EnsureUtc(DateTime value)
+    {
+        return value.Kind == DateTimeKind.Utc
+            ? value
+            : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+    }
+
+    private sealed record RecoveryTokenState(
+        int AvailableTokens,
+        bool GrantedThisEvaluation,
+        string WeekKey,
+        string LocalDate);
 
     private static bool TryResolveTimeZone(string timeZoneId, out string resolvedTimeZoneId)
     {

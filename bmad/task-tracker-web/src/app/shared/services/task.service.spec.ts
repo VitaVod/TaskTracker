@@ -50,6 +50,11 @@ describe('TaskService', () => {
       dueAtUtc: '2026-04-27T18:00:00Z',
       priority: 'medium',
       category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: null,
+      effortPoints: null,
+      predictedDurationMinutes: null,
       isCompleted: false,
       createdAtUtc: '2026-04-25T11:30:12Z',
       updatedAtUtc: '2026-04-25T11:30:12Z'
@@ -132,6 +137,11 @@ describe('TaskService', () => {
           dueAtUtc: null,
           priority: 'low',
           category: 'personal',
+          difficulty: 'easy',
+          energyLevel: 'low',
+          contextTag: 'home',
+          effortPoints: 3,
+          predictedDurationMinutes: 45,
           isCompleted: true,
           createdAtUtc: '2026-04-25T11:30:12Z',
           updatedAtUtc: '2026-04-25T11:30:12Z'
@@ -152,7 +162,11 @@ describe('TaskService', () => {
       description: 'Finalize priorities after stakeholder sync',
       dueAtUtc: '2026-04-28T17:00:00Z',
       priority: 'high',
-      category: 'work'
+      category: 'work',
+      difficulty: 'medium',
+      energyLevel: 'high',
+      contextTag: 'office',
+      effortPoints: 8
     };
 
     let responseBody: unknown;
@@ -171,9 +185,54 @@ describe('TaskService', () => {
       dueAtUtc: '2026-04-28T17:00:00Z',
       priority: 'high',
       category: 'work',
+      difficulty: 'medium',
+      energyLevel: 'high',
+      contextTag: 'office',
+      effortPoints: 8,
+      predictedDurationMinutes: 90,
       isCompleted: false,
       createdAtUtc: '2026-04-25T11:30:12Z',
       updatedAtUtc: '2026-04-26T09:15:03Z'
+    });
+
+    expect(responseBody).toBeTruthy();
+  });
+
+  it('requests tasks with combined state and planning filters', () => {
+    let responseBody: unknown;
+    service.getTasks('active', { energyLevel: 'high', contextTag: 'Office' }).subscribe((response) => {
+      responseBody = response;
+    });
+
+    const request = httpMock.expectOne('/api/v1/tasks?state=active&energyLevel=high&contextTag=office');
+    expect(request.request.method).toBe('GET');
+
+    request.flush({
+      items: [],
+      summary: {
+        activeCount: 0,
+        completedCount: 0
+      }
+    });
+
+    expect(responseBody).toBeTruthy();
+  });
+
+  it('requests tasks with title and priority planning filters', () => {
+    let responseBody: unknown;
+    service.getTasks('active', { title: 'Sprint', priority: 'high' }).subscribe((response) => {
+      responseBody = response;
+    });
+
+    const request = httpMock.expectOne('/api/v1/tasks?state=active&title=Sprint&priority=high');
+    expect(request.request.method).toBe('GET');
+
+    request.flush({
+      items: [],
+      summary: {
+        activeCount: 0,
+        completedCount: 0
+      }
     });
 
     expect(responseBody).toBeTruthy();
@@ -195,15 +254,31 @@ describe('TaskService', () => {
     expect(request.request.headers.get('Idempotency-Key')).toBe('idempotency-key-123');
 
     request.flush({
-      id: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
-      title: 'Plan sprint backlog v2',
-      description: 'Finalize priorities after stakeholder sync',
-      dueAtUtc: '2026-04-28T17:00:00Z',
-      priority: 'high',
-      category: 'work',
-      isCompleted: true,
-      createdAtUtc: '2026-04-25T11:30:12Z',
-      updatedAtUtc: '2026-04-26T09:15:03Z'
+      task: {
+        id: '7f8d3d3f-1bba-4b43-8de6-2bf5f83e8a12',
+        title: 'Plan sprint backlog v2',
+        description: 'Finalize priorities after stakeholder sync',
+        dueAtUtc: '2026-04-28T17:00:00Z',
+        priority: 'high',
+        category: 'work',
+        difficulty: 'medium',
+        energyLevel: 'high',
+        contextTag: 'office',
+        effortPoints: 8,
+        predictedDurationMinutes: 90,
+        isCompleted: true,
+        createdAtUtc: '2026-04-25T11:30:12Z',
+        updatedAtUtc: '2026-04-26T09:15:03Z'
+      },
+      progression: {
+        completionEventId: 'event-1',
+        xpLedgerEntryId: 'ledger-1',
+        xpGranted: 20,
+        eligibleForXp: true,
+        idempotentReplay: false,
+        idempotencyKey: 'idempotency-key-123',
+        traceId: 'trace-1'
+      }
     });
 
     expect(responseBody).toBeTruthy();

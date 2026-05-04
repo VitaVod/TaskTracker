@@ -1,0 +1,186 @@
+<main class="ops-review-page">
+  <section class="ops-review-shell">
+    <header>
+      <p class="eyebrow">TaskTracker / Operations</p>
+      <h1>Suspicious activity review</h1>
+      <p class="subtitle">Review anomaly signals for ranking and completion patterns before moderation actions.</p>
+      <div class="header-actions">
+        <a routerLink="/dashboard" class="back-link">Back to dashboard</a>
+      </div>
+    </header>
+
+    <nav class="filter-toggle" aria-label="Suspicious case filters">
+      @for (option of filterOptions; track option.value) {
+        <button
+          type="button"
+          class="filter-button"
+          [class.active]="selectedFilter === option.value"
+          [attr.aria-pressed]="selectedFilter === option.value"
+          [attr.aria-label]="option.ariaLabel"
+          (click)="selectFilter(option.value)"
+          (keydown.enter)="setFilterFromKeyboard($event, option.value)"
+          (keydown.space)="setFilterFromKeyboard($event, option.value)">
+          {{ option.label }}
+        </button>
+      }
+    </nav>
+
+    <section class="moderation-composer" aria-label="Moderation reason details">
+      <div class="composer-field">
+        <label for="moderation-reason-code">Reason code</label>
+        <select id="moderation-reason-code" [value]="selectedReasonCode" (change)="setReasonCode($event)">
+          @for (option of reasonOptions; track option.code) {
+            <option [value]="option.code">{{ option.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="composer-field">
+        <label for="moderation-reason-text">Reason details (optional)</label>
+        <textarea
+          id="moderation-reason-text"
+          rows="2"
+          maxlength="512"
+          [value]="reasonText"
+          (input)="setReasonText($event)"
+          placeholder="Add concise context for the audit trail."></textarea>
+      </div>
+    </section>
+
+    @if (actionFeedback) {
+      <p class="action-feedback" role="status" aria-live="polite">{{ actionFeedback }}</p>
+    }
+
+    @if (actionError) {
+      <p class="action-error" role="alert" aria-live="assertive">{{ actionError }}</p>
+    }
+
+    <p class="sr-only" aria-live="polite">{{ liveMessage }}</p>
+
+    @if (state === 'loading') {
+      <section class="state-card" aria-live="polite" aria-busy="true">
+        <p class="state-title">Loading suspicious cases...</p>
+      </section>
+    } @else if (state === 'error') {
+      <section class="state-card" role="alert" aria-live="assertive">
+        <p class="state-title">{{ errorMessage }}</p>
+        @if (errorSupportText) {
+          <p class="state-meta">{{ errorSupportText }}</p>
+        }
+        <button type="button" class="action-button" (click)="retry()">Retry case refresh</button>
+      </section>
+    } @else if (state === 'empty') {
+      <section class="state-card" aria-live="polite">
+        <p class="state-title">No suspicious cases for this filter.</p>
+        <p class="state-meta">Try another filter or refresh to fetch newer signals.</p>
+        @if (selectedFilter !== 'all') {
+          <button type="button" class="action-button" (click)="selectFilter('all')">Reset filters</button>
+        }
+      </section>
+    } @else {
+      <section class="table-shell" aria-label="Suspicious case table">
+        <header class="table-header">
+          <h2>Review queue</h2>
+          <p class="page-summary">Showing {{ paginationSummary() }}</p>
+        </header>
+
+        <div class="table-wrap" role="region" aria-label="Suspicious activity cases">
+          <table>
+            <caption class="sr-only">Suspicious cases with severity and context for investigation</caption>
+            <thead>
+              <tr>
+                <th scope="col">Severity</th>
+                <th scope="col">Identity</th>
+                <th scope="col">Anomaly</th>
+                <th scope="col">Signal</th>
+                <th scope="col">Detected</th>
+                <th scope="col">Correlation</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of cases; track trackByCaseId($index, item)) {
+                <tr>
+                  <td>
+                    <span class="severity-chip" [class]="'severity-chip ' + severityLabel(item)">
+                      {{ item.severity }} · {{ severityLabel(item) }}
+                    </span>
+                  </td>
+                  <td>
+                    <p class="identity">{{ item.publicIdentity }}</p>
+                    <p class="meta">{{ item.identityMode === 'anonymous' ? 'Anonymous participant' : 'Public participant' }}</p>
+                  </td>
+                  <td>{{ anomalyLabel(item) }}</td>
+                  <td>{{ item.signalSummary }}</td>
+                  <td>
+                    <p>{{ formatTimestamp(item.detectedAtUtc) }}</p>
+                    <p class="meta">Last activity: {{ formatTimestamp(item.lastActivityAtUtc) }}</p>
+                  </td>
+                  <td>
+                    <p>{{ item.correlationRef }}</p>
+                    <p class="meta">Case ID: {{ item.caseId }}</p>
+                  </td>
+                  <td>
+                    <div class="row-actions">
+                      <button
+                        type="button"
+                        class="action-button"
+                        [disabled]="!canSubmitNonDestructiveAction(item)"
+                        (click)="submitFlagEntity(item)">
+                        {{ isCasePending(item) ? 'Applying...' : 'Flag entity' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="action-button warning"
+                        [disabled]="isSubmittingAction || selectedReasonCode.trim().length === 0"
+                        (click)="queueRankingCorrection(item)">
+                        Ranking correction
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <nav class="pagination" aria-label="Suspicious cases pagination">
+          <button type="button" class="action-button" (click)="previousPage()" [disabled]="page <= 1">Previous page</button>
+          <p class="page-label" aria-live="polite">Page {{ page }}</p>
+          <button type="button" class="action-button" (click)="nextPage()" [disabled]="!hasNextPage">Next page</button>
+        </nav>
+      </section>
+    }
+
+    @if (confirmationCase) {
+      <section class="confirm-overlay" role="dialog" aria-modal="true" aria-label="Confirm ranking correction">
+        <div class="confirm-dialog">
+          <h2>Confirm ranking correction</h2>
+          <p>
+            This action will hide the participant from leaderboard rankings and materially change standings.
+          </p>
+          <p class="meta">Case ID: {{ confirmationCase.caseId }}</p>
+          <p class="meta">Identity: {{ confirmationCase.publicIdentity }}</p>
+
+          <label class="confirm-check">
+            <input type="checkbox" [checked]="confirmationChecked" (change)="setConfirmationChecked($event)" />
+            I understand this is a high-impact moderation action.
+          </label>
+
+          <div class="confirm-actions">
+            <button type="button" class="action-button" [disabled]="isSubmittingAction" (click)="closeConfirmationDialog()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="action-button warning"
+              [disabled]="!confirmationChecked || isSubmittingAction"
+              (click)="confirmRankingCorrection()">
+              {{ isSubmittingAction ? 'Applying...' : 'Confirm correction' }}
+            </button>
+          </div>
+        </div>
+      </section>
+    }
+  </section>
+</main>

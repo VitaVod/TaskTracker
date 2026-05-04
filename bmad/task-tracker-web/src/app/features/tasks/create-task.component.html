@@ -18,7 +18,7 @@
       }
 
       <label for="description">Description</label>
-      <textarea id="description" formControlName="description" maxlength="2000" rows="4"></textarea>
+      <textarea id="description" formControlName="description" maxlength="2000" rows="4" style="resize: vertical;"></textarea>
       @if (fieldError('description')) {
         <p class="field-error">{{ fieldError('description') }}</p>
       }
@@ -65,6 +65,56 @@
       @if (fieldError('category')) {
         <p class="field-error">{{ fieldError('category') }}</p>
       }
+
+      <div class="row">
+        <div>
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty" formControlName="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+          @if (fieldError('difficulty')) {
+            <p class="field-error">{{ fieldError('difficulty') }}</p>
+          }
+        </div>
+
+        <div>
+          <label for="energyLevel">Energy level</label>
+          <select id="energyLevel" formControlName="energyLevel">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+          <p class="field-help">Energy reflects the focus load for this task.</p>
+          @if (fieldError('energyLevel')) {
+            <p class="field-error">{{ fieldError('energyLevel') }}</p>
+          }
+        </div>
+      </div>
+
+      <label for="contextTag">Context tag</label>
+      <input id="contextTag" type="text" formControlName="contextTag" maxlength="64" list="recent-context-tags" placeholder="office, deep-work, commute" />
+      <datalist id="recent-context-tags">
+        @for (tag of recentContextTags; track tag) {
+          <option [value]="tag"></option>
+        }
+      </datalist>
+      <p class="field-help">Recently used tags are suggested here to speed up future task creation.</p>
+      @if (fieldError('contextTag')) {
+        <p class="field-error">{{ fieldError('contextTag') }}</p>
+      }
+
+      <div class="row">
+        <div>
+          <label for="effortPoints">Effort points (1-100)</label>
+          <input id="effortPoints" type="number" formControlName="effortPoints" min="1" max="100" />
+          <p class="field-help">Use points to estimate relative effort against your other tasks.</p>
+          @if (fieldError('effortPoints')) {
+            <p class="field-error">{{ fieldError('effortPoints') }}</p>
+          }
+        </div>
+      </div>
 
       @if (errorMessage) {
         <p class="api-error">{{ errorMessage }}</p>

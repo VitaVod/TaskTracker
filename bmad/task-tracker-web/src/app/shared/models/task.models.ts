@@ -1,5 +1,7 @@
 export type TaskPriority = 'low' | 'medium' | 'high';
 export type TaskListState = 'active' | 'completed' | 'all';
+export type TaskDifficulty = 'easy' | 'medium' | 'hard';
+export type TaskEnergyLevel = 'low' | 'medium' | 'high';
 export const TASK_CATEGORIES = [
   'work',
   'learning',
@@ -54,6 +56,10 @@ export interface CreateTaskRequest {
   dueAtUtc?: string | null;
   priority: TaskPriority;
   category: TaskCategory;
+  difficulty?: TaskDifficulty;
+  energyLevel?: TaskEnergyLevel;
+  contextTag?: string | null;
+  effortPoints?: number | null;
 }
 
 export interface UpdateTaskRequest {
@@ -62,6 +68,18 @@ export interface UpdateTaskRequest {
   dueAtUtc?: string | null;
   priority: TaskPriority;
   category: TaskCategory;
+  difficulty?: TaskDifficulty;
+  energyLevel?: TaskEnergyLevel;
+  contextTag?: string | null;
+  effortPoints?: number | null;
+}
+
+export interface TaskListFilters {
+  title?: string;
+  priority?: TaskPriority;
+  energyLevel?: TaskEnergyLevel;
+  difficulty?: TaskDifficulty;
+  contextTag?: string;
 }
 
 export interface ToggleTaskCompletionRequest {
@@ -102,6 +120,11 @@ export interface TaskResponse {
   dueAtUtc: string | null;
   priority: TaskPriority;
   category: string;
+  difficulty: TaskDifficulty;
+  energyLevel: TaskEnergyLevel;
+  contextTag: string | null;
+  effortPoints: number | null;
+  predictedDurationMinutes: number | null;
   isCompleted: boolean;
   createdAtUtc: string;
   updatedAtUtc: string;

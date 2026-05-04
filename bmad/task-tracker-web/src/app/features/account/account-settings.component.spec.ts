@@ -13,7 +13,8 @@ describe('AccountSettingsComponent', () => {
     accountService = jasmine.createSpyObj<AccountService>('AccountService', [
       'getCurrentUser',
       'updateProfile',
-      'updateSettings'
+      'updateSettings',
+      'requestEmailChange'
     ]);
 
     accountService.getCurrentUser.and.returnValue(of({
@@ -109,5 +110,31 @@ describe('AccountSettingsComponent', () => {
 
     expect(blockedComponent.hasLoadedAccount).toBeFalse();
     expect(failingService.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('renders participation helper text for accessible mode selection', () => {
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Choose how your identity appears in public rankings.');
+    expect(text).toContain('Hidden');
+    expect(text).toContain('Anonymous alias');
+    expect(text).toContain('Public display name');
+  });
+
+  it('submits email-change request with password re-authentication payload', () => {
+    accountService.requestEmailChange.and.returnValue(of({ message: 'If the email can be changed, a confirmation link has been sent.' }));
+
+    component.emailChangeForm.setValue({
+      newEmail: 'updated@example.com',
+      currentPassword: 'StrongPass123!'
+    });
+
+    component.requestEmailChange();
+
+    expect(accountService.requestEmailChange).toHaveBeenCalledWith({
+      newEmail: 'updated@example.com',
+      currentPassword: 'StrongPass123!'
+    });
+    expect(component.emailChangeMessage).toContain('confirmation link');
+    expect(component.emailChangeForm.getRawValue().currentPassword).toBe('');
   });
 });

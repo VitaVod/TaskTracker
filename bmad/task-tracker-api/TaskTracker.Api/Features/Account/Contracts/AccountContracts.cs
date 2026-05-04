@@ -10,3 +10,11 @@ public record AccountMeResponse(
     DateTime UpdatedAtUtc);
 
 public record AccountUpdateResponse(string Message);
+
+public record AccountEmailChangeRequest(string NewEmail, string CurrentPassword);
+
+public record AccountEmailChangeRequestResponse(string Message);
+
+public record AccountEmailChangeConfirmRequest(string Token);
+
+public record AccountEmailChangeConfirmResponse(string Message);

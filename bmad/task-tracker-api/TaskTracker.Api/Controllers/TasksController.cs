@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Api.Features.Tasks.Contracts;
 using TaskTracker.Api.Features.Tasks.Repositories;
+using TaskTracker.Api.Features.Tasks.Validation;
 using TaskTracker.Api.Infrastructure.Authorization;
 using TaskTracker.Api.Infrastructure.Persistence.Entities;
 
@@ -20,6 +21,13 @@ public class TasksController(
         "active",
         "completed",
         "all"
+    };
+
+    private static readonly HashSet<string> AllowedEnergyLevels = new(StringComparer.Ordinal)
+    {
+        "low",
+        "medium",
+        "high"
     };
 
     private static readonly HashSet<string> AllowedPriorities = new(StringComparer.Ordinal)
@@ -40,12 +48,12 @@ public class TasksController(
             return UnauthorizedProblem("tasks.identity.invalid");
         }
 
-        if (!TryParseState(query.State, out var state, out var errors))
+        if (!TryParseListFilters(query, out var state, out var title, out var priority, out var energyLevel, out var contextTag, out var errors))
         {
             return ValidationProblem("validation.request.invalid", errors);
         }
 
-        var tasks = await taskRepository.ListOwnedByStateAsync(userId, state, cancellationToken);
+        var tasks = await taskRepository.ListOwnedByStateAsync(userId, state, title, priority, energyLevel, contextTag, cancellationToken);
         var (activeCount, completedCount) = await taskRepository.CountOwnedByCompletionStateAsync(userId, cancellationToken);
 
         var response = new TaskListResponse(
@@ -75,6 +83,9 @@ public class TasksController(
         var now = DateTime.UtcNow;
         var normalizedPriority = request.Priority!.Trim().ToLowerInvariant();
         var normalizedCategory = request.Category!.Trim().ToLowerInvariant();
+        var normalizedDifficulty = NormalizeDifficulty(request.Difficulty);
+        var normalizedEnergyLevel = NormalizeEnergyLevel(request.EnergyLevel);
+        var normalizedContextTag = NormalizeContextTag(request.ContextTag);
 
         var task = new TaskItem
         {
@@ -85,6 +96,10 @@ public class TasksController(
             DueAtUtc = request.DueAtUtc,
             Priority = normalizedPriority,
             Category = normalizedCategory,
+            Difficulty = normalizedDifficulty,
+            EnergyLevel = normalizedEnergyLevel,
+            ContextTag = normalizedContextTag,
+            EffortPoints = request.EffortPoints,
             IsCompleted = false,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
@@ -129,7 +144,11 @@ public class TasksController(
             request.Description,
             request.DueAtUtc,
             request.Priority,
-            request.Category);
+            request.Category,
+            request.Difficulty,
+            request.EnergyLevel,
+            request.ContextTag,
+            request.EffortPoints);
 
         if (!isValid)
         {
@@ -145,6 +164,10 @@ public class TasksController(
             request.DueAtUtc,
             request.Priority!.Trim().ToLowerInvariant(),
             request.Category!.Trim().ToLowerInvariant(),
+            NormalizeDifficulty(request.Difficulty),
+            NormalizeEnergyLevel(request.EnergyLevel),
+            NormalizeContextTag(request.ContextTag),
+            request.EffortPoints,
             now,
             cancellationToken);
 
@@ -279,6 +302,7 @@ public class TasksController(
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete([FromRoute] string taskId, CancellationToken cancellationToken)
     {
         if (!TryResolveCurrentUserId(out var userId))
@@ -302,6 +326,13 @@ public class TasksController(
             return ForbiddenProblem("auth.forbidden");
         }
 
+        if (deleteResult.Status == TaskDeleteStatus.CompletedTaskDeletionBlocked)
+        {
+            return ConflictProblem(
+                "tasks.delete.completed.blocked",
+                "Completed tasks cannot be deleted because progress must remain deterministic. Mark the task as active to adjust it, then keep it in completed history.");
+        }
+
         logger.LogInformation(
             "Task {TaskId} delete processed for user {UserId} with status {DeleteStatus}. TraceId: {TraceId}",
             parsedTaskId,
@@ -320,12 +351,16 @@ public class TasksController(
 
     private static (bool IsValid, Dictionary<string, string[]> Errors) Validate(CreateTaskRequest request)
     {
-        return ValidateTaskPayload(
+        return TaskPayloadValidator.Validate(
             request.Title,
             request.Description,
             request.DueAtUtc,
             request.Priority,
-            request.Category);
+            request.Category,
+            request.Difficulty,
+            request.EnergyLevel,
+            request.ContextTag,
+            request.EffortPoints);
     }
 
     private static (bool IsValid, Dictionary<string, string[]> Errors) ValidateTaskPayload(
@@ -333,49 +368,22 @@ public class TasksController(
         string? description,
         DateTime? dueAtUtc,
         string? priority,
-        string? category)
+        string? category,
+        string? difficulty,
+        string? energyLevel,
+        string? contextTag,
+        int? effortPoints)
     {
-        var errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            errors["title"] = ["The title field is required."];
-        }
-        else if (title.Trim().Length > 160)
-        {
-            errors["title"] = ["The title field must be 160 characters or fewer."];
-        }
-
-        var normalizedDescription = description?.Trim() ?? string.Empty;
-        if (normalizedDescription.Length > 2000)
-        {
-            errors["description"] = ["The description field must be 2000 characters or fewer."];
-        }
-
-        if (dueAtUtc.HasValue && dueAtUtc.Value.Kind != DateTimeKind.Utc)
-        {
-            errors["dueAtUtc"] = ["The dueAtUtc field must be a UTC datetime value."];
-        }
-
-        if (string.IsNullOrWhiteSpace(priority))
-        {
-            errors["priority"] = ["The priority field is required."];
-        }
-        else if (!AllowedPriorities.Contains(priority.Trim().ToLowerInvariant()))
-        {
-            errors["priority"] = ["The priority field must be one of: low, medium, high."];
-        }
-
-        if (string.IsNullOrWhiteSpace(category))
-        {
-            errors["category"] = ["The category field is required."];
-        }
-        else if (category.Trim().Length > 64)
-        {
-            errors["category"] = ["The category field must be 64 characters or fewer."];
-        }
-
-        return (errors.Count == 0, errors);
+        return TaskPayloadValidator.Validate(
+            title,
+            description,
+            dueAtUtc,
+            priority,
+            category,
+            difficulty,
+            energyLevel,
+            contextTag,
+            effortPoints);
     }
 
     private static TaskResponse ToResponse(TaskItem task)
@@ -387,37 +395,144 @@ public class TasksController(
             task.DueAtUtc,
             task.Priority,
             task.Category,
+            task.Difficulty.ToString().ToLowerInvariant(),
+            task.EnergyLevel.ToString().ToLowerInvariant(),
+            task.ContextTag,
+            task.EffortPoints,
             task.IsCompleted,
             task.CreatedAtUtc,
             task.UpdatedAtUtc);
     }
 
-    private static bool TryParseState(string? state, out TaskListState parsedState, out Dictionary<string, string[]> errors)
+    private static TaskDifficulty NormalizeDifficulty(string? difficulty)
+    {
+        var normalizedDifficulty = string.IsNullOrWhiteSpace(difficulty)
+            ? "easy"
+            : difficulty.Trim().ToLowerInvariant();
+
+        return normalizedDifficulty switch
+        {
+            "hard" => TaskDifficulty.Hard,
+            "medium" => TaskDifficulty.Medium,
+            _ => TaskDifficulty.Easy
+        };
+    }
+
+    private static TaskEnergyLevel NormalizeEnergyLevel(string? energyLevel)
+    {
+        var normalizedEnergyLevel = string.IsNullOrWhiteSpace(energyLevel)
+            ? "medium"
+            : energyLevel.Trim().ToLowerInvariant();
+
+        return normalizedEnergyLevel switch
+        {
+            "low" => TaskEnergyLevel.Low,
+            "high" => TaskEnergyLevel.High,
+            _ => TaskEnergyLevel.Medium
+        };
+    }
+
+    private static string? NormalizeContextTag(string? contextTag)
+    {
+        if (string.IsNullOrWhiteSpace(contextTag))
+        {
+            return null;
+        }
+
+        return contextTag.Trim().ToLowerInvariant();
+    }
+
+    private static bool TryParseListFilters(
+        TaskListQuery query,
+        out TaskListState parsedState,
+        out string? title,
+        out string? priority,
+        out string? energyLevel,
+        out string? contextTag,
+        out Dictionary<string, string[]> errors)
     {
         errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        title = null;
+        priority = null;
+        energyLevel = null;
+        contextTag = null;
+
+        var state = query.State;
 
         if (string.IsNullOrWhiteSpace(state))
         {
             parsedState = TaskListState.All;
-            return true;
+        }
+        else
+        {
+            var normalizedState = state.Trim().ToLowerInvariant();
+            parsedState = normalizedState switch
+            {
+                "active" => TaskListState.Active,
+                "completed" => TaskListState.Completed,
+                "all" => TaskListState.All,
+                _ => TaskListState.All
+            };
+
+            if (!AllowedStates.Contains(normalizedState))
+            {
+                errors["state"] = ["The state filter must be one of: active, completed, all."];
+            }
         }
 
-        var normalizedState = state.Trim().ToLowerInvariant();
-        parsedState = normalizedState switch
+        if (!string.IsNullOrWhiteSpace(query.Title))
         {
-            "active" => TaskListState.Active,
-            "completed" => TaskListState.Completed,
-            "all" => TaskListState.All,
-            _ => TaskListState.All
-        };
-
-        if (AllowedStates.Contains(normalizedState))
-        {
-            return true;
+            var normalizedTitle = query.Title.Trim();
+            if (normalizedTitle.Length > 160)
+            {
+                errors["title"] = ["The title filter must be 160 characters or fewer."];
+            }
+            else
+            {
+                title = normalizedTitle;
+            }
         }
 
-        errors["state"] = ["The state filter must be one of: active, completed, all."];
-        return false;
+        if (!string.IsNullOrWhiteSpace(query.Priority))
+        {
+            var normalizedPriority = query.Priority.Trim().ToLowerInvariant();
+            if (!AllowedPriorities.Contains(normalizedPriority))
+            {
+                errors["priority"] = ["The priority filter must be one of: low, medium, high."];
+            }
+            else
+            {
+                priority = normalizedPriority;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.EnergyLevel))
+        {
+            var normalizedEnergyLevel = query.EnergyLevel.Trim().ToLowerInvariant();
+            if (!AllowedEnergyLevels.Contains(normalizedEnergyLevel))
+            {
+                errors["energyLevel"] = ["The energyLevel filter must be one of: low, medium, high."];
+            }
+            else
+            {
+                energyLevel = normalizedEnergyLevel;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.ContextTag))
+        {
+            var normalizedContextTag = query.ContextTag.Trim().ToLowerInvariant();
+            if (normalizedContextTag.Length > 64)
+            {
+                errors["contextTag"] = ["The contextTag filter must be 64 characters or fewer."];
+            }
+            else
+            {
+                contextTag = normalizedContextTag;
+            }
+        }
+
+        return errors.Count == 0;
     }
 
     private bool TryResolveIdempotencyKey(out string? idempotencyKey, out string? error)
@@ -508,5 +623,21 @@ public class TasksController(
         details.Extensions["traceId"] = HttpContext.TraceIdentifier;
 
         return StatusCode(StatusCodes.Status404NotFound, details);
+    }
+
+    private ObjectResult ConflictProblem(string code, string detail)
+    {
+        var details = new ProblemDetails
+        {
+            Type = "https://api.tasktracker.local/problems/conflict",
+            Title = "Conflict",
+            Status = StatusCodes.Status409Conflict,
+            Detail = detail
+        };
+
+        details.Extensions["code"] = code;
+        details.Extensions["traceId"] = HttpContext.TraceIdentifier;
+
+        return StatusCode(StatusCodes.Status409Conflict, details);
     }
 }

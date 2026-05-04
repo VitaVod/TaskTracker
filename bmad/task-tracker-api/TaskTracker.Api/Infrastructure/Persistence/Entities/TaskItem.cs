@@ -16,6 +16,14 @@ public class TaskItem
 
     public string Category { get; set; } = string.Empty;
 
+    public TaskDifficulty Difficulty { get; set; } = TaskDifficulty.Easy;
+
+    public TaskEnergyLevel EnergyLevel { get; set; } = TaskEnergyLevel.Medium;
+
+    public string? ContextTag { get; set; }
+
+    public int? EffortPoints { get; set; }
+
     public bool IsCompleted { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }

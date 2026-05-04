@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Mvc;
+using TaskTracker.Api.Features.Integrations.Authentication;
 
 namespace TaskTracker.Api.Infrastructure.Authorization;
 
@@ -55,6 +56,11 @@ public sealed class TraceableAuthorizationMiddlewareResultHandler(
 
     private static string ResolveForbiddenCode(AuthorizationFailure? failure)
     {
+        if (failure?.FailedRequirements.Any(req => req is IntegrationScopeRequirement) == true)
+        {
+            return "auth.integration.scope.denied";
+        }
+
         if (failure?.FailedRequirements.Any(req => req is OwnershipRequirement) == true)
         {
             return "authz.ownership.denied";

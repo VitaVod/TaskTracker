@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Authorization;
@@ -233,6 +235,10 @@ public class AuthControllerTests : IClassFixture<AuthTestFactory>
         var response = await _client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("admin", payload.GetProperty("capability").GetString());
+        Assert.Equal("healthy", payload.GetProperty("emailConfiguration").GetProperty("status").GetString());
     }
 
     [Fact]
@@ -293,6 +299,32 @@ public class AuthControllerTests : IClassFixture<AuthTestFactory>
         Assert.NotNull(knownPayload);
         Assert.NotNull(unknownPayload);
         Assert.Equal(knownPayload.Message, unknownPayload.Message);
+        Assert.Contains("If you do not receive it within 10 minutes", knownPayload.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("contact support", knownPayload.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PasswordRecoveryRequest_LogsProviderCorrelationOnDeliveryOutcome()
+    {
+        await _factory.ResetStateAsync();
+        _factory.ClearCapturedLogs();
+        await _client.PostAsJsonAsync("/api/v1/auth/register", new RegisterRequest("recover.provider-log@example.com", "StrongPass123!"));
+
+        _factory.GetRecoveryEmailService().SetNextOutcomes(
+            TransactionalEmailSendOutcome.Success("provider-msg-001", "accepted"));
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/auth/password-recovery/request",
+            new PasswordRecoveryRequest("recover.provider-log@example.com"));
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        var logs = _factory.GetCapturedLogs();
+        Assert.Contains(logs, entry =>
+            entry.Level == LogLevel.Information
+            && entry.Message.Contains("Account notification provider response", StringComparison.Ordinal)
+            && entry.Message.Contains("ProviderMessageId=provider-msg-001", StringComparison.Ordinal)
+            && entry.Message.Contains("SendResult=Success", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -316,6 +348,78 @@ public class AuthControllerTests : IClassFixture<AuthTestFactory>
         var tokenId = sent[^1].TokenId;
         var attemptCount = await _factory.GetPasswordRecoveryDeliveryAttemptCountAsync(tokenId);
         Assert.Equal(3, attemptCount);
+    }
+
+    [Fact]
+    public async Task PasswordRecoveryRequest_WithAccountNotificationsDisabled_DoesNotSendRecoveryEmail()
+    {
+        await _factory.ResetStateAsync();
+
+        var user = await RegisterAndLoginWithUserAsync("recover.optout@example.com");
+        await _factory.SetAccountEmailEnabledAsync(user.UserId, false);
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/auth/password-recovery/request",
+            new PasswordRecoveryRequest("recover.optout@example.com"));
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.DoesNotContain(
+            _factory.GetRecoveryEmailService().GetAttemptedMessages(),
+            message => string.Equals(message.ToEmail, "recover.optout@example.com", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task PasswordRecoveryConfirm_WithValidToken_SendsPasswordResetCompletedAccountNotification()
+    {
+        await _factory.ResetStateAsync();
+        var user = await RegisterAndLoginWithUserAsync("recover.completed.notice@example.com");
+
+        await _client.PostAsJsonAsync(
+            "/api/v1/auth/password-recovery/request",
+            new PasswordRecoveryRequest("recover.completed.notice@example.com"));
+
+        var recoveryMessage = _factory.GetRecoveryEmailService().GetAttemptedMessages().Last();
+        var token = ExtractRecoveryToken(recoveryMessage.RecoveryLink);
+
+        var confirmResponse = await _client.PostAsJsonAsync(
+            "/api/v1/auth/password-recovery/confirm",
+            new PasswordRecoveryConfirmRequest(token, "NewStrongPass456!"));
+
+        Assert.Equal(HttpStatusCode.OK, confirmResponse.StatusCode);
+
+        Assert.Contains(
+            _factory.GetRecoveryEmailService().GetAttemptedAccountSecurityMessages(),
+            message => message.UserId == user.UserId
+                && message.EventType == AccountSecurityEventType.PasswordResetCompleted);
+
+        var succeededDispatches = await _factory.CountAccountNotificationDispatchesAsync(
+            user.UserId,
+            AccountNotificationDispatchStatus.Succeeded);
+        Assert.True(succeededDispatches >= 1);
+    }
+
+    [Fact]
+    public async Task AccountNotificationPermanentFailure_AppearsInAdminDiagnostics()
+    {
+        await _factory.ResetStateAsync();
+        _factory.GetRecoveryEmailService().SetNextResults(TransactionalEmailSendResult.PermanentFailure);
+
+        var user = await RegisterAndLoginWithUserAsync("recover.permanent.ops@example.com");
+        var admin = await RegisterAndLoginWithUserAsync("recover.permanent.ops.admin@example.com", AppRoles.Admin);
+
+        var requestResponse = await _client.PostAsJsonAsync(
+            "/api/v1/auth/password-recovery/request",
+            new PasswordRecoveryRequest("recover.permanent.ops@example.com"));
+        Assert.Equal(HttpStatusCode.Accepted, requestResponse.StatusCode);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/ops/admin/account-notifications/failures");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", admin.Tokens.AccessToken);
+
+        var diagnosticsResponse = await _client.SendAsync(request);
+        var diagnosticsPayload = await diagnosticsResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, diagnosticsResponse.StatusCode);
+        Assert.True(diagnosticsPayload.GetProperty("failureCount").GetInt32() >= 1);
     }
 
     [Fact]
@@ -537,11 +641,32 @@ public class AuthTestFactory : WebApplicationFactory<Program>
 
     public FakeTransactionalEmailService GetRecoveryEmailService() => _recoveryEmailService;
 
+    public async Task ResetStateAsync()
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        await dbContext.Database.EnsureDeletedAsync();
+        await dbContext.Database.EnsureCreatedAsync();
+
+        _recoveryEmailService.ClearReminderAttempts();
+        _recoveryEmailService.ClearAccountSecurityAttempts();
+        ClearCapturedLogs();
+    }
+
     public async Task ExpirePasswordRecoveryTokenAsync(Guid tokenId)
     {
         using var scope = Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
         var token = await dbContext.PasswordRecoveryTokens.FirstAsync(token => token.TokenId == tokenId);
+        token.ExpiresAtUtc = DateTime.UtcNow.AddMinutes(-1);
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task ExpireEmailChangeTokenAsync(Guid tokenId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var token = await dbContext.EmailChangeTokens.FirstAsync(existingToken => existingToken.TokenId == tokenId);
         token.ExpiresAtUtc = DateTime.UtcNow.AddMinutes(-1);
         await dbContext.SaveChangesAsync();
     }
@@ -560,6 +685,15 @@ public class AuthTestFactory : WebApplicationFactory<Program>
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
         var user = await dbContext.Users.FirstAsync(u => u.Id == userId);
         user.Role = role;
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task SetAccountEmailEnabledAsync(Guid userId, bool enabled)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var user = await dbContext.Users.FirstAsync(u => u.Id == userId);
+        user.AccountEmailEnabled = enabled;
         await dbContext.SaveChangesAsync();
     }
 
@@ -588,6 +722,99 @@ public class AuthTestFactory : WebApplicationFactory<Program>
         var user = await dbContext.Users.FirstAsync(u => u.Id == userId);
         user.LeaderboardParticipationMode = mode;
         await dbContext.SaveChangesAsync();
+    }
+
+    public async Task<LeaderboardParticipationMode> GetLeaderboardParticipationModeAsync(Guid userId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var user = await dbContext.Users.FirstAsync(existingUser => existingUser.Id == userId);
+        return user.LeaderboardParticipationMode;
+    }
+
+    public async Task<bool> IsUserSuspiciousFlaggedAsync(Guid userId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var user = await dbContext.Users.FirstAsync(existingUser => existingUser.Id == userId);
+        return user.IsSuspiciousFlagged;
+    }
+
+    public async Task<int> CountModerationActionAuditsAsync(Guid targetUserId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        return await dbContext.ModerationActionAudits.CountAsync(audit => audit.TargetUserId == targetUserId);
+    }
+
+    public async Task<ModerationActionAudit?> FindLatestModerationAuditByCaseIdAsync(string caseId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        return await dbContext.ModerationActionAudits
+            .OrderByDescending(audit => audit.CreatedAtUtc)
+            .FirstOrDefaultAsync(audit => audit.CaseId == caseId);
+    }
+
+    public async Task<int> CountPrivilegedActionAuditsAsync(Guid? targetUserId = null)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+
+        if (targetUserId.HasValue)
+        {
+            return await dbContext.PrivilegedActionAudits.CountAsync(audit => audit.TargetUserId == targetUserId);
+        }
+
+        return await dbContext.PrivilegedActionAudits.CountAsync();
+    }
+
+    public async Task<PrivilegedActionAudit?> FindLatestPrivilegedActionAuditByTargetUserIdAsync(Guid targetUserId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        return await dbContext.PrivilegedActionAudits
+            .OrderByDescending(audit => audit.OccurredAtUtc)
+            .ThenBy(audit => audit.Id)
+            .FirstOrDefaultAsync(audit => audit.TargetUserId == targetUserId);
+    }
+
+    public async Task AddPrivilegedActionAuditAsync(PrivilegedActionAudit audit)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        dbContext.PrivilegedActionAudits.Add(audit);
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task AddIntegrationTaskSyncBindingAsync(IntegrationTaskSyncBinding binding)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        dbContext.IntegrationTaskSyncBindings.Add(binding);
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task<int> CountIntegrationFailureEventsAsync(Guid ownerUserId, string integrationId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        return await dbContext.IntegrationProcessingFailureEvents.CountAsync(item =>
+            item.OwnerUserId == ownerUserId
+            && item.IntegrationId == integrationId);
+    }
+
+    public async Task<IntegrationProcessingFailureEvent?> FindLatestIntegrationFailureEventAsync(Guid ownerUserId, string integrationId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+
+        return await dbContext.IntegrationProcessingFailureEvents
+            .AsNoTracking()
+            .Where(item => item.OwnerUserId == ownerUserId && item.IntegrationId == integrationId)
+            .OrderByDescending(item => item.OccurredAtUtc)
+            .ThenByDescending(item => item.Id)
+            .FirstOrDefaultAsync();
     }
 
     public async Task<int> CountTasksForUserAsync(Guid userId)
@@ -685,6 +912,10 @@ public class AuthTestFactory : WebApplicationFactory<Program>
             existing.TimeZoneId = snapshot.TimeZoneId;
             existing.EvaluationWindowStartUtc = snapshot.EvaluationWindowStartUtc;
             existing.EvaluationWindowEndUtc = snapshot.EvaluationWindowEndUtc;
+            existing.RecoveryTokenBalance = snapshot.RecoveryTokenBalance;
+            existing.RecoveryTokenWeekKey = snapshot.RecoveryTokenWeekKey;
+            existing.LastRecoveryTokenGrantedAtUtc = snapshot.LastRecoveryTokenGrantedAtUtc;
+            existing.LastRecoveryTokenConsumedAtUtc = snapshot.LastRecoveryTokenConsumedAtUtc;
             existing.LastEvaluatedEventId = snapshot.LastEvaluatedEventId;
             existing.LastEvaluationTraceId = snapshot.LastEvaluationTraceId;
             existing.LastEvaluatedAtUtc = snapshot.LastEvaluatedAtUtc;
@@ -694,6 +925,80 @@ public class AuthTestFactory : WebApplicationFactory<Program>
     }
 
     public IReadOnlyCollection<CapturedLogEntry> GetCapturedLogs() => _logs.ToArray();
+
+    public async Task<int> CountReminderDispatchesAsync(Guid userId, NotificationReminderDispatchStatus? status = null)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+
+        var query = dbContext.NotificationReminderDispatches.Where(dispatch => dispatch.UserId == userId);
+        if (status is not null)
+        {
+            query = query.Where(dispatch => dispatch.Status == status.Value);
+        }
+
+        return await query.CountAsync();
+    }
+
+    public async Task AddReminderDispatchAsync(NotificationReminderDispatch dispatch)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+
+        dbContext.NotificationReminderDispatches.Add(dispatch);
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task<int> CountStreakRecoveryTokenEventsAsync(Guid userId, StreakRecoveryTokenEventType? eventType = null)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+
+        var query = dbContext.StreakRecoveryTokenEvents.Where(tokenEvent => tokenEvent.OwnerId == userId);
+        if (eventType is not null)
+        {
+            query = query.Where(tokenEvent => tokenEvent.EventType == eventType.Value);
+        }
+
+        return await query.CountAsync();
+    }
+
+    public async Task<int> CountAccountNotificationDispatchesAsync(Guid userId, AccountNotificationDispatchStatus? status = null)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+
+        var query = dbContext.AccountNotificationDispatches.Where(dispatch => dispatch.UserId == userId);
+        if (status is not null)
+        {
+            query = query.Where(dispatch => dispatch.Status == status.Value);
+        }
+
+        return await query.CountAsync();
+    }
+
+    public async Task RevokeIntegrationCredentialAsync(Guid credentialId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var credential = await dbContext.IntegrationCredentials
+            .FirstAsync(existing => existing.Id == credentialId);
+
+        credential.Status = IntegrationCredentialStatus.Revoked;
+        credential.RevokedAtUtc = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync();
+    }
+
+    public async Task SetIntegrationCredentialExpiryAsync(Guid credentialId, DateTime expiresAtUtc)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskTrackerDbContext>();
+        var credential = await dbContext.IntegrationCredentials
+            .FirstAsync(existing => existing.Id == credentialId);
+
+        credential.ExpiresAtUtc = expiresAtUtc;
+        await dbContext.SaveChangesAsync();
+    }
 
     public void ClearCapturedLogs()
     {
@@ -740,9 +1045,37 @@ public sealed class TestLogger(string categoryName, ConcurrentQueue<CapturedLogE
 public sealed class FakeTransactionalEmailService : ITransactionalEmailService
 {
     private readonly ConcurrentQueue<PasswordRecoveryEmailMessage> _attemptedMessages = new();
-    private readonly ConcurrentQueue<TransactionalEmailSendResult> _plannedResults = new();
+    private readonly ConcurrentQueue<TransactionalEmailSendOutcome> _plannedResults = new();
+    private readonly ConcurrentQueue<TaskReminderEmailMessage> _attemptedReminderMessages = new();
+    private readonly ConcurrentQueue<TransactionalEmailSendOutcome> _plannedReminderResults = new();
+    private readonly ConcurrentQueue<AccountSecurityEventEmailMessage> _attemptedAccountSecurityMessages = new();
+    private readonly ConcurrentQueue<TransactionalEmailSendOutcome> _plannedAccountSecurityResults = new();
 
     public IReadOnlyList<PasswordRecoveryEmailMessage> GetAttemptedMessages() => _attemptedMessages.ToArray();
+    public IReadOnlyList<TaskReminderEmailMessage> GetAttemptedReminderMessages() => _attemptedReminderMessages.ToArray();
+    public IReadOnlyList<AccountSecurityEventEmailMessage> GetAttemptedAccountSecurityMessages() => _attemptedAccountSecurityMessages.ToArray();
+
+    public void ClearReminderAttempts()
+    {
+        while (_attemptedReminderMessages.TryDequeue(out _))
+        {
+        }
+
+        while (_plannedReminderResults.TryDequeue(out _))
+        {
+        }
+    }
+
+    public void ClearAccountSecurityAttempts()
+    {
+        while (_attemptedAccountSecurityMessages.TryDequeue(out _))
+        {
+        }
+
+        while (_plannedAccountSecurityResults.TryDequeue(out _))
+        {
+        }
+    }
 
     public void SetNextResults(params TransactionalEmailSendResult[] results)
     {
@@ -750,22 +1083,98 @@ public sealed class FakeTransactionalEmailService : ITransactionalEmailService
         {
         }
 
-        foreach (var result in results)
+        for (var index = 0; index < results.Length; index++)
         {
-            _plannedResults.Enqueue(result);
+            _plannedResults.Enqueue(CreateOutcome(results[index], "password-recovery", index + 1));
         }
     }
 
-    public Task<TransactionalEmailSendResult> SendPasswordRecoveryAsync(
+    public void SetNextOutcomes(params TransactionalEmailSendOutcome[] outcomes)
+    {
+        while (_plannedResults.TryDequeue(out _))
+        {
+        }
+
+        foreach (var outcome in outcomes)
+        {
+            _plannedResults.Enqueue(outcome);
+        }
+    }
+
+    public void SetNextReminderResults(params TransactionalEmailSendResult[] results)
+    {
+        while (_plannedReminderResults.TryDequeue(out _))
+        {
+        }
+
+        for (var index = 0; index < results.Length; index++)
+        {
+            _plannedReminderResults.Enqueue(CreateOutcome(results[index], "reminder", index + 1));
+        }
+    }
+
+    public void SetNextAccountSecurityResults(params TransactionalEmailSendResult[] results)
+    {
+        while (_plannedAccountSecurityResults.TryDequeue(out _))
+        {
+        }
+
+        for (var index = 0; index < results.Length; index++)
+        {
+            _plannedAccountSecurityResults.Enqueue(CreateOutcome(results[index], "account-security", index + 1));
+        }
+    }
+
+    public Task<TransactionalEmailSendOutcome> SendPasswordRecoveryAsync(
         PasswordRecoveryEmailMessage message,
         CancellationToken cancellationToken)
     {
         _attemptedMessages.Enqueue(message);
-        if (_plannedResults.TryDequeue(out var result))
+        if (_plannedResults.TryDequeue(out var outcome))
         {
-            return Task.FromResult(result);
+            return Task.FromResult(outcome);
         }
 
-        return Task.FromResult(TransactionalEmailSendResult.Success);
+        return Task.FromResult(TransactionalEmailSendOutcome.Success($"fake-password-recovery-{message.TokenId:N}"));
+    }
+
+    public Task<TransactionalEmailSendOutcome> SendTaskReminderAsync(
+        TaskReminderEmailMessage message,
+        CancellationToken cancellationToken)
+    {
+        _attemptedReminderMessages.Enqueue(message);
+        if (_plannedReminderResults.TryDequeue(out var outcome))
+        {
+            return Task.FromResult(outcome);
+        }
+
+        return Task.FromResult(TransactionalEmailSendOutcome.Success($"fake-reminder-{message.UserId:N}-{message.WindowStartUtc:yyyyMMddHHmmss}"));
+    }
+
+    public Task<TransactionalEmailSendOutcome> SendAccountSecurityEventAsync(
+        AccountSecurityEventEmailMessage message,
+        CancellationToken cancellationToken)
+    {
+        _attemptedAccountSecurityMessages.Enqueue(message);
+        if (_plannedAccountSecurityResults.TryDequeue(out var outcome))
+        {
+            return Task.FromResult(outcome);
+        }
+
+        return Task.FromResult(TransactionalEmailSendOutcome.Success($"fake-account-security-{message.CorrelationId}"));
+    }
+
+    private static TransactionalEmailSendOutcome CreateOutcome(TransactionalEmailSendResult result, string channel, int sequence)
+    {
+        return result switch
+        {
+            TransactionalEmailSendResult.Success =>
+                TransactionalEmailSendOutcome.Success($"fake-{channel}-msg-{sequence:000}"),
+            TransactionalEmailSendResult.TransientFailure =>
+                TransactionalEmailSendOutcome.TransientFailure($"{channel}-transient-{sequence:000}"),
+            TransactionalEmailSendResult.PermanentFailure =>
+                TransactionalEmailSendOutcome.PermanentFailure($"{channel}-permanent-{sequence:000}"),
+            _ => TransactionalEmailSendOutcome.TransientFailure($"{channel}-unknown-{sequence:000}", "unknown")
+        };
     }
 }

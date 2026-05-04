@@ -37,7 +37,21 @@ describe('ProgressService', () => {
     request.flush({
       totalXp: 120,
       ledgerEntryCount: 12,
-      lastGrantedAtUtc: '2026-04-28T09:15:00Z'
+      lastGrantedAtUtc: '2026-04-28T09:15:00Z',
+      levelProgress: {
+        currentLevel: 2,
+        currentLevelThresholdXp: 100,
+        nextLevel: 3,
+        nextLevelThresholdXp: 225,
+        percentToNextLevel: 16,
+        bandMilestoneLevels: [3, 5, 10, 20, 30, 50],
+        reachedBandCount: 0,
+        nextBandLevel: 3
+      },
+      outcomeExplanation: {
+        reasonCode: 'xp-earned-from-completions',
+        message: 'XP increased from eligible task completion events processed by the progression engine.'
+      }
     });
 
     expect(responseBody).toBeTruthy();
@@ -60,7 +74,15 @@ describe('ProgressService', () => {
       timeZoneId: 'UTC',
       evaluationWindowStartUtc: '2026-04-27T00:00:00Z',
       evaluationWindowEndUtc: '2026-04-28T00:00:00Z',
-      lastEvaluatedAtUtc: '2026-04-28T09:15:00Z'
+      lastEvaluatedAtUtc: '2026-04-28T09:15:00Z',
+      isRecoveryPromptVisible: false,
+      recoveryReason: null,
+      recommendedAction: null,
+      outcomeExplanation: {
+        reasonCode: 'streak-continued',
+        message: 'Your streak is active at 5 day(s) because completions stayed within the allowed local-day window.'
+      },
+      recoveryExplanation: null
     });
 
     expect(responseBody).toBeTruthy();

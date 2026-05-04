@@ -90,7 +90,7 @@ public class AccountUpdateValidator : IAccountUpdateValidator
                 false,
                 string.Empty,
                 false,
-                LeaderboardParticipationMode.Hidden,
+                LeaderboardParticipationMode.Public,
                 errors);
         }
 
@@ -99,7 +99,7 @@ public class AccountUpdateValidator : IAccountUpdateValidator
         var hasLeaderboardParticipationMode = false;
         var timeZoneId = string.Empty;
         var locale = string.Empty;
-        var leaderboardParticipationMode = LeaderboardParticipationMode.Hidden;
+        var leaderboardParticipationMode = LeaderboardParticipationMode.Public;
 
         foreach (var property in payload.EnumerateObject())
         {

@@ -18,6 +18,14 @@ public class UserStreakSnapshot
 
     public DateTime EvaluationWindowEndUtc { get; set; }
 
+    public int RecoveryTokenBalance { get; set; }
+
+    public string RecoveryTokenWeekKey { get; set; } = string.Empty;
+
+    public DateTime? LastRecoveryTokenGrantedAtUtc { get; set; }
+
+    public DateTime? LastRecoveryTokenConsumedAtUtc { get; set; }
+
     public Guid LastEvaluatedEventId { get; set; }
 
     public string LastEvaluationTraceId { get; set; } = string.Empty;

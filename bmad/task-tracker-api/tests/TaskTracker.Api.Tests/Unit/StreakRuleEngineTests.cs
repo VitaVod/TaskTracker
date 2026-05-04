@@ -102,10 +102,51 @@ public class StreakRuleEngineTests
             [
                 new DateTime(2026, 3, 8, 8, 30, 0, DateTimeKind.Utc),
                 new DateTime(2026, 3, 9, 7, 30, 0, DateTimeKind.Utc)
-            ]);
+            ],
+            availableRecoveryTokens: 0);
 
         Assert.Equal(TaskStreakOutcome.Continue, result.Outcome);
         Assert.Equal(2, result.CurrentStreakDays);
         Assert.True(result.EvaluationWindowEndUtc > result.EvaluationWindowStartUtc);
+    }
+
+    [Fact]
+    public void Evaluate_MissedSingleDay_WithRecoveryToken_ConsumesTokenAndPreservesContinuity()
+    {
+        var result = _engine.Evaluate(
+            "UTC",
+            new DateTime(2026, 5, 3, 10, 0, 0, DateTimeKind.Utc),
+            resultingIsCompleted: true,
+            completionOccurredAtUtc:
+            [
+                new DateTime(2026, 5, 1, 8, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 3, 10, 0, 0, DateTimeKind.Utc)
+            ],
+            availableRecoveryTokens: 1);
+
+        Assert.Equal(TaskStreakOutcome.Continue, result.Outcome);
+        Assert.True(result.RecoveryTokenConsumed);
+        Assert.Equal(0, result.RemainingRecoveryTokens);
+        Assert.Equal(3, result.CurrentStreakDays);
+    }
+
+    [Fact]
+    public void Evaluate_MissedSingleDay_WithoutRecoveryToken_Restarts()
+    {
+        var result = _engine.Evaluate(
+            "UTC",
+            new DateTime(2026, 5, 3, 10, 0, 0, DateTimeKind.Utc),
+            resultingIsCompleted: true,
+            completionOccurredAtUtc:
+            [
+                new DateTime(2026, 5, 1, 8, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 3, 10, 0, 0, DateTimeKind.Utc)
+            ],
+            availableRecoveryTokens: 0);
+
+        Assert.Equal(TaskStreakOutcome.Restart, result.Outcome);
+        Assert.False(result.RecoveryTokenConsumed);
+        Assert.Equal(0, result.RemainingRecoveryTokens);
+        Assert.Equal(1, result.CurrentStreakDays);
     }
 }

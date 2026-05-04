@@ -24,6 +24,22 @@ body {
 		radial-gradient(circle at 12% 14%, rgba(139, 245, 251, 0.2), transparent 34%),
 		radial-gradient(circle at 88% 28%, rgba(141, 250, 187, 0.2), transparent 28%),
 		linear-gradient(130deg, var(--bg-start), var(--bg-mid) 55%, var(--bg-end));
+	scrollbar-width: thin;
+	scrollbar-color: #4f7da0 #0f1d31;
+}
+
+*::-webkit-scrollbar {
+	width: 0.6rem;
+	height: 0.6rem;
+}
+
+*::-webkit-scrollbar-thumb {
+	border-radius: 999px;
+	background: linear-gradient(180deg, #5d91bb, #3e6787);
+}
+
+*::-webkit-scrollbar-track {
+	background: rgba(10, 29, 47, 0.9);
 }
 
 h1,

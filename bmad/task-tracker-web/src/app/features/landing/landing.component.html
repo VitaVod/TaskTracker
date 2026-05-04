@@ -1,0 +1,85 @@
+<main class="landing-page">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">TaskTracker v1.0</p>
+      <h1>Ship your day with momentum.</h1>
+      <p class="hero-subtitle">
+        TaskTracker combines task execution, streak logic, XP progression, and clear analytics into one focused workspace.
+      </p>
+
+      <div class="hero-actions">
+        <a class="btn btn-primary" routerLink="/register">Start free</a>
+        <a class="btn btn-secondary" routerLink="/login">Sign in</a>
+        <a class="btn btn-ghost" href="#features">Explore features</a>
+      </div>
+    </div>
+
+    <div class="hero-panel" aria-label="Release snapshot">
+      <h2>Release Snapshot</h2>
+      <div class="highlight-grid">
+        @for (highlight of highlights; track highlight.title) {
+          <article class="highlight-card">
+            <p class="label">{{ highlight.title }}</p>
+            <p class="value">{{ highlight.value }}</p>
+            <p class="detail">{{ highlight.detail }}</p>
+          </article>
+        }
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="feature-section">
+    <div class="section-heading">
+      <p class="eyebrow">What is inside v1.0</p>
+      <h2>Built for consistency, not chaos.</h2>
+    </div>
+
+    <div class="feature-grid">
+      @for (feature of features; track feature.title) {
+        <article class="feature-card">
+          <p class="badge">{{ feature.badge }}</p>
+          <h3>{{ feature.title }}</h3>
+          <p>{{ feature.summary }}</p>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="flow-section" aria-label="How TaskTracker works">
+    <div class="section-heading">
+      <p class="eyebrow">Three-step flow</p>
+      <h2>Plan. Execute. Compound.</h2>
+    </div>
+
+    <div class="flow-grid">
+      <article>
+        <p class="step">Step 1</p>
+        <h3>Prioritize your day</h3>
+        <p>Create tasks with difficulty, energy level, categories, and contextual tags.</p>
+      </article>
+      <article>
+        <p class="step">Step 2</p>
+        <h3>Mark progress confidently</h3>
+        <p>Completions are processed safely to avoid duplicate XP and protect streak integrity.</p>
+      </article>
+      <article>
+        <p class="step">Step 3</p>
+        <h3>Read your momentum</h3>
+        <p>Use dashboard and leaderboard signals to adjust habits and sustain performance.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="final-cta">
+    <h2>Ready to run your next productive streak?</h2>
+    <p>Create your account in under a minute and start building momentum today.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" routerLink="/register">Create account</a>
+      <a class="btn btn-secondary" routerLink="/login">I already have one</a>
+    </div>
+  </section>
+
+  <footer class="landing-footer">
+    <p>TaskTracker v1.0 • {{ year }} • Built for focused execution</p>
+  </footer>
+</main>

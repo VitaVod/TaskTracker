@@ -4,6 +4,7 @@ import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import {
   LeaderboardProblemDetails,
+  PublicProfileResponse,
   LeaderboardResponse,
   LeaderboardType
 } from '../models/leaderboard.models';
@@ -21,13 +22,19 @@ export class LeaderboardService {
       .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error))));
   }
 
-  private normalizeProblemDetails(error: HttpErrorResponse): LeaderboardProblemDetails {
+  getPublicProfile(handle: string): Observable<PublicProfileResponse> {
+    return this.httpClient
+      .get<PublicProfileResponse>(`${this.endpoint}/profiles/${encodeURIComponent(handle)}`)
+      .pipe(catchError((error: HttpErrorResponse) => throwError(() => this.normalizeProblemDetails(error, 'leaderboard.profile.request.failed'))));
+  }
+
+  private normalizeProblemDetails(error: HttpErrorResponse, fallbackCode = 'leaderboard.request.failed'): LeaderboardProblemDetails {
     const payload = (error.error ?? {}) as LeaderboardProblemDetails;
     return {
       type: payload.type,
       title: payload.title ?? 'Request failed',
       status: payload.status ?? error.status,
-      code: payload.code ?? 'leaderboard.request.failed',
+      code: payload.code ?? fallbackCode,
       traceId: payload.traceId,
       detail: payload.detail,
       errors: payload.errors

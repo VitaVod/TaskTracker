@@ -6,7 +6,20 @@ namespace TaskTracker.Api.Features.Progress.Repositories;
 public sealed record ProgressXpSummary(
     int TotalXp,
     int LedgerEntryCount,
-    DateTime? LastGrantedAtUtc);
+    DateTime? LastGrantedAtUtc,
+    ProgressLevelSnapshot LevelProgress,
+    string OutcomeReasonCode,
+    string OutcomeExplanation);
+
+public sealed record ProgressLevelSnapshot(
+    int CurrentLevel,
+    int CurrentLevelThresholdXp,
+    int NextLevel,
+    int NextLevelThresholdXp,
+    double PercentToNextLevel,
+    IReadOnlyCollection<int> BandMilestoneLevels,
+    int ReachedBandCount,
+    int? NextBandLevel);
 
 public sealed record ProgressStreakSnapshot(
     TaskStreakOutcome Outcome,
@@ -15,7 +28,13 @@ public sealed record ProgressStreakSnapshot(
     string TimeZoneId,
     DateTime EvaluationWindowStartUtc,
     DateTime EvaluationWindowEndUtc,
-    DateTime LastEvaluatedAtUtc);
+    DateTime LastEvaluatedAtUtc,
+    bool IsRecoveryPromptVisible,
+    string? RecoveryReason,
+    string? RecommendedAction,
+    string OutcomeReasonCode,
+    string OutcomeExplanation,
+    string? RecoveryExplanation);
 
 public sealed record ProgressTrendPoint(
     DateTime BucketStartUtc,

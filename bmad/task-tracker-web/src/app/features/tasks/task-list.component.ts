@@ -15,6 +15,9 @@ import {
   TASK_CATEGORY_OPTIONS,
   TaskCategory,
   TaskCompletionProgression,
+  TaskDifficulty,
+  TaskEnergyLevel,
+  TaskListFilters,
   TaskListState,
   TaskPriority,
   TaskProblemDetails,
@@ -60,6 +63,12 @@ export class TaskListComponent implements OnInit {
   ];
 
   selectedFilter: TaskListState = 'all';
+  tabSwitchAnimationPhase: 'a' | 'b' = 'a';
+  titleFilterInput = '';
+  selectedPriorityFilter: TaskPriority | '' = '';
+  selectedEnergyFilter: TaskEnergyLevel | '' = '';
+  selectedDifficultyFilter: TaskDifficulty | '' = '';
+  contextFilterInput = '';
   tasks: TaskResponse[] = [];
   editingTaskId: string | null = null;
   activeCount = 0;
@@ -101,7 +110,11 @@ export class TaskListComponent implements OnInit {
     description: ['', [Validators.maxLength(2000)]],
     dueAtUtc: ['', [notPastDueDateValidator()]],
     priority: ['medium' as TaskPriority, [Validators.required]],
-    category: ['work' as TaskCategory, [Validators.required]]
+    category: ['work' as TaskCategory, [Validators.required]],
+    difficulty: ['easy' as TaskDifficulty, [Validators.required]],
+    energyLevel: ['medium' as TaskEnergyLevel, [Validators.required]],
+    contextTag: ['', [Validators.maxLength(64)]],
+    effortPoints: [null as number | null, [Validators.min(1), Validators.max(100)]]
   });
 
   ngOnInit(): void {
@@ -115,12 +128,71 @@ export class TaskListComponent implements OnInit {
     }
 
     this.selectedFilter = filter;
+    this.toggleTabSwitchAnimationPhase();
     this.loadTasks(true);
+  }
+
+  applyPlanningFilters(): void {
+    this.loadTasks(true);
+  }
+
+  clearPlanningFilters(): void {
+    this.titleFilterInput = '';
+    this.selectedPriorityFilter = '';
+    this.selectedEnergyFilter = '';
+    this.selectedDifficultyFilter = '';
+    this.contextFilterInput = '';
+    this.loadTasks(true);
+  }
+
+  setTitleFilter(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    this.titleFilterInput = target.value;
+  }
+
+  setPriorityFilter(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    this.selectedPriorityFilter = target.value as TaskPriority | '';
   }
 
   setFilterFromKeyboard(event: Event, filter: TaskListState): void {
     event.preventDefault();
     this.setFilter(filter);
+  }
+
+  setEnergyFilter(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    this.selectedEnergyFilter = target.value as TaskEnergyLevel | '';
+  }
+
+  setContextFilter(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    this.contextFilterInput = target.value;
+  }
+
+  setDifficultyFilter(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    this.selectedDifficultyFilter = target.value as TaskDifficulty | '';
   }
 
   retryLoad(): void {
@@ -137,6 +209,7 @@ export class TaskListComponent implements OnInit {
     }
 
     this.selectedFilter = 'all';
+    this.toggleTabSwitchAnimationPhase();
     this.loadTasks(true);
   }
 
@@ -308,8 +381,21 @@ export class TaskListComponent implements OnInit {
       description: task.description,
       dueAtUtc: this.toDateTimeLocal(task.dueAtUtc),
       priority: task.priority,
-      category: this.toEditableCategory(task.category)
+      category: this.toEditableCategory(task.category),
+      difficulty: task.difficulty,
+      energyLevel: task.energyLevel,
+      contextTag: task.contextTag ?? '',
+      effortPoints: task.effortPoints ?? 50
     });
+  }
+
+  toggleEdit(task: TaskResponse): void {
+    if (this.isEditing(task)) {
+      this.cancelEdit();
+      return;
+    }
+
+    this.startEdit(task);
   }
 
   cancelEdit(): void {
@@ -323,7 +409,11 @@ export class TaskListComponent implements OnInit {
       description: '',
       dueAtUtc: '',
       priority: 'medium',
-      category: 'work'
+      category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: '',
+      effortPoints: null
     });
   }
 
@@ -348,7 +438,11 @@ export class TaskListComponent implements OnInit {
       description: rawValue.description.trim(),
       dueAtUtc: rawValue.dueAtUtc.trim() === '' ? null : new Date(rawValue.dueAtUtc).toISOString(),
       priority: rawValue.priority,
-      category: rawValue.category
+      category: rawValue.category,
+      difficulty: rawValue.difficulty,
+      energyLevel: rawValue.energyLevel,
+      contextTag: rawValue.contextTag.trim() === '' ? null : rawValue.contextTag.trim().toLowerCase(),
+      effortPoints: rawValue.effortPoints
     };
 
     this.isSaving = true;
@@ -374,7 +468,7 @@ export class TaskListComponent implements OnInit {
       });
   }
 
-  fieldError(fieldName: 'title' | 'description' | 'dueAtUtc' | 'priority' | 'category'): string {
+  fieldError(fieldName: 'title' | 'description' | 'dueAtUtc' | 'priority' | 'category' | 'difficulty' | 'energyLevel' | 'contextTag' | 'effortPoints'): string {
     return this.saveFieldErrors[fieldName]?.[0] ?? '';
   }
 
@@ -486,7 +580,7 @@ export class TaskListComponent implements OnInit {
         error: (error: TaskProblemDetails) => {
           this.deleteErrorCode = error.code;
           this.deleteErrorTraceId = error.traceId;
-          this.deleteErrorMessage = error.title ?? error.detail ?? 'Task deletion failed.';
+          this.deleteErrorMessage = this.resolveDeleteErrorMessage(error);
           this.liveMessage = this.deleteErrorMessage;
         }
       });
@@ -540,7 +634,29 @@ export class TaskListComponent implements OnInit {
     const requestId = ++this.latestLoadRequestId;
     this.uiState = { kind: 'loading' };
 
-    this.taskService.getTasks(this.selectedFilter).subscribe({
+    const filters: TaskListFilters = {};
+    if (this.titleFilterInput.trim() !== '') {
+      filters.title = this.titleFilterInput.trim();
+    }
+
+    if (this.selectedPriorityFilter !== '') {
+      filters.priority = this.selectedPriorityFilter;
+    }
+
+    if (this.selectedEnergyFilter !== '') {
+      filters.energyLevel = this.selectedEnergyFilter;
+    }
+
+    if (this.selectedDifficultyFilter !== '') {
+      filters.difficulty = this.selectedDifficultyFilter;
+    }
+
+    if (this.contextFilterInput.trim() !== '') {
+      filters.contextTag = this.contextFilterInput.trim();
+    }
+
+    const hasPlanningFilters = Boolean(filters.title || filters.priority || filters.energyLevel || filters.difficulty || filters.contextTag);
+    this.taskService.getTasks(this.selectedFilter, hasPlanningFilters ? filters : undefined).subscribe({
       next: (response) => {
         if (requestId !== this.latestLoadRequestId) {
           return;
@@ -585,7 +701,21 @@ export class TaskListComponent implements OnInit {
       return `Showing ${this.tasks.length} completed tasks.`;
     }
 
+    if (
+      this.titleFilterInput.trim() !== ''
+      || this.selectedPriorityFilter
+      || this.selectedEnergyFilter
+      || this.selectedDifficultyFilter
+      || this.contextFilterInput.trim() !== ''
+    ) {
+      return `Showing ${this.tasks.length} tasks for selected planning filters.`;
+    }
+
     return `Showing ${this.activeCount} active and ${this.completedCount} completed tasks.`;
+  }
+
+  private toggleTabSwitchAnimationPhase(): void {
+    this.tabSwitchAnimationPhase = this.tabSwitchAnimationPhase === 'a' ? 'b' : 'a';
   }
 
   private reconcileTaskAfterCompletionToggle(previousTask: TaskResponse, updatedTask: TaskResponse): void {
@@ -669,6 +799,15 @@ export class TaskListComponent implements OnInit {
     }
 
     return parts.join(' | ');
+  }
+
+  private resolveDeleteErrorMessage(error: TaskProblemDetails): string {
+    if (error.code === 'tasks.delete.completed.blocked') {
+      return error.detail
+        ?? 'Completed tasks cannot be deleted. Mark the task as active if you need to change it, then keep it in completed history.';
+    }
+
+    return error.title ?? error.detail ?? 'Task deletion failed.';
   }
 
   private loadProgressSnapshot(shouldAnnounceError: boolean): void {

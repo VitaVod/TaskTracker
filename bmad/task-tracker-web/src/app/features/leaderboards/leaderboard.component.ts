@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { LeaderboardEntry, LeaderboardProblemDetails, LeaderboardType } from '../../shared/models/leaderboard.models';
+import { AuthService } from '../../shared/services/auth.service';
 import { LeaderboardService } from '../../shared/services/leaderboard.service';
 
 type LeaderboardViewState = 'loading' | 'ready' | 'empty' | 'error';
@@ -21,6 +22,7 @@ interface LeaderboardTypeOption {
 })
 export class LeaderboardComponent {
   private readonly leaderboardService = inject(LeaderboardService);
+  private readonly authService = inject(AuthService);
 
   readonly typeOptions: ReadonlyArray<LeaderboardTypeOption> = [
     {
@@ -45,6 +47,7 @@ export class LeaderboardComponent {
   errorMessage = '';
   errorSupportText = '';
   liveMessage = '';
+  readonly isAdmin = this.authService.hasRole('admin');
 
   constructor() {
     this.loadLeaderboard(false);
@@ -105,6 +108,14 @@ export class LeaderboardComponent {
 
   identityModeLabel(entry: LeaderboardEntry): string {
     return entry.identityMode === 'anonymous' ? 'Anonymous participant' : 'Public participant';
+  }
+
+  canViewPublicProfile(entry: LeaderboardEntry): boolean {
+    return entry.identityMode === 'public' && !!entry.publicProfileHandle;
+  }
+
+  publicProfileRoute(entry: LeaderboardEntry): string[] {
+    return ['/profile/public', entry.publicProfileHandle ?? ''];
   }
 
   movementSymbol(): string {

@@ -23,7 +23,8 @@ public enum TaskDeleteStatus
 {
     Deleted,
     Forbidden,
-    IdempotentNotFound
+    IdempotentNotFound,
+    CompletedTaskDeletionBlocked
 }
 
 public sealed record TaskUpdateResult(TaskUpdateStatus Status, TaskItem? Task);
@@ -49,11 +50,32 @@ public sealed record TaskProgressionOutcome(
 
 public sealed record TaskDeleteResult(TaskDeleteStatus Status);
 
+public enum IntegrationTaskSyncStatus
+{
+    Created,
+    Updated,
+    IdempotentReplay,
+    Forbidden
+}
+
+public sealed record IntegrationTaskSyncResult(
+    IntegrationTaskSyncStatus Status,
+    TaskItem? Task,
+    string? ReplayOperation,
+    string? ExternalTaskId);
+
 public interface ITaskRepository
 {
     Task CreateAsync(TaskItem task, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<TaskItem>> ListOwnedByStateAsync(Guid userId, TaskListState state, CancellationToken cancellationToken);
+    Task<IReadOnlyList<TaskItem>> ListOwnedByStateAsync(
+        Guid userId,
+        TaskListState state,
+        string? title,
+        string? priority,
+        string? energyLevel,
+        string? contextTag,
+        CancellationToken cancellationToken);
 
     Task<(int ActiveCount, int CompletedCount)> CountOwnedByCompletionStateAsync(Guid userId, CancellationToken cancellationToken);
 
@@ -65,6 +87,10 @@ public interface ITaskRepository
         DateTime? dueAtUtc,
         string priority,
         string category,
+        TaskDifficulty difficulty,
+        TaskEnergyLevel energyLevel,
+        string? contextTag,
+        int? effortPoints,
         DateTime updatedAtUtc,
         CancellationToken cancellationToken);
 
@@ -80,5 +106,25 @@ public interface ITaskRepository
     Task<TaskDeleteResult> DeleteOwnedAsync(
         Guid userId,
         Guid taskId,
+        CancellationToken cancellationToken);
+
+    Task<IntegrationTaskSyncResult> UpsertOwnedFromIntegrationAsync(
+        Guid ownerUserId,
+        string integrationId,
+        string idempotencyKey,
+        string externalTaskId,
+        string title,
+        string description,
+        DateTime? dueAtUtc,
+        string priority,
+        string category,
+        TaskDifficulty difficulty,
+        TaskEnergyLevel energyLevel,
+        string? contextTag,
+        int? effortPoints,
+        bool isCompleted,
+        string correlationId,
+        string traceId,
+        DateTime updatedAtUtc,
         CancellationToken cancellationToken);
 }

@@ -30,19 +30,28 @@ export class AccountSettingsComponent implements OnInit {
   readonly settingsForm = this.formBuilder.nonNullable.group({
     timeZoneId: ['UTC', [Validators.required, Validators.maxLength(64)]],
     locale: ['en-US', [Validators.required, Validators.pattern(/^[a-z]{2}(?:-[A-Z]{2})?$/), Validators.maxLength(16)]],
-    leaderboardParticipationMode: ['hidden', [Validators.required]]
+    leaderboardParticipationMode: ['public', [Validators.required]]
+  });
+
+  readonly emailChangeForm = this.formBuilder.nonNullable.group({
+    newEmail: ['', [Validators.required, Validators.email, Validators.maxLength(320)]],
+    currentPassword: ['', [Validators.required, Validators.minLength(10), Validators.maxLength(128)]]
   });
 
   isLoading = true;
   hasLoadedAccount = false;
   isSavingProfile = false;
   isSavingSettings = false;
+  isSubmittingEmailChange = false;
   profileMessage = '';
   settingsMessage = '';
+  emailChangeMessage = '';
   profileError = '';
   settingsError = '';
+  emailChangeError = '';
   profileFieldErrors: Record<string, string[]> = {};
   settingsFieldErrors: Record<string, string[]> = {};
+  emailChangeFieldErrors: Record<string, string[]> = {};
 
   ngOnInit(): void {
     this.accountService.getCurrentUser().subscribe({
@@ -125,22 +134,59 @@ export class AccountSettingsComponent implements OnInit {
       });
   }
 
-  fieldErrorFor(formKind: 'profile' | 'settings', fieldName: string): string {
-    const map = formKind === 'profile' ? this.profileFieldErrors : this.settingsFieldErrors;
+  requestEmailChange(): void {
+    this.emailChangeMessage = '';
+    this.emailChangeError = '';
+    this.emailChangeFieldErrors = {};
+
+    if (this.emailChangeForm.invalid) {
+      this.emailChangeForm.markAllAsTouched();
+      return;
+    }
+
+    if (!this.hasLoadedAccount) {
+      this.emailChangeError = 'Refresh account data before requesting an email change.';
+      return;
+    }
+
+    this.isSubmittingEmailChange = true;
+    this.accountService.requestEmailChange(this.emailChangeForm.getRawValue())
+      .pipe(finalize(() => { this.isSubmittingEmailChange = false; }))
+      .subscribe({
+        next: (response) => {
+          this.emailChangeMessage = response.message;
+          this.emailChangeForm.controls.currentPassword.reset('');
+        },
+        error: (error: unknown) => {
+          this.handleError(error, 'email-change');
+        }
+      });
+  }
+
+  fieldErrorFor(formKind: 'profile' | 'settings' | 'email-change', fieldName: string): string {
+    const map = formKind === 'profile'
+      ? this.profileFieldErrors
+      : formKind === 'settings'
+        ? this.settingsFieldErrors
+        : this.emailChangeFieldErrors;
     return map[fieldName]?.[0] ?? '';
   }
 
-  private handleError(error: unknown, target: 'profile' | 'settings'): void {
+  private handleError(error: unknown, target: 'profile' | 'settings' | 'email-change'): void {
     const details = (error as HttpErrorResponse)?.error as ApiProblemDetails | undefined;
     const fallback = target === 'profile'
       ? 'Profile update failed. Please review your inputs.'
-      : 'Settings update failed. Please review your inputs.';
+      : target === 'settings'
+        ? 'Settings update failed. Please review your inputs.'
+        : 'Email change request failed. Please review your inputs.';
 
     if (details?.errors) {
       if (target === 'profile') {
         this.profileFieldErrors = details.errors;
-      } else {
+      } else if (target === 'settings') {
         this.settingsFieldErrors = details.errors;
+      } else {
+        this.emailChangeFieldErrors = details.errors;
       }
     }
 
@@ -148,8 +194,10 @@ export class AccountSettingsComponent implements OnInit {
 
     if (target === 'profile') {
       this.profileError = message;
-    } else {
+    } else if (target === 'settings') {
       this.settingsError = message;
+    } else {
+      this.emailChangeError = message;
     }
   }
 }

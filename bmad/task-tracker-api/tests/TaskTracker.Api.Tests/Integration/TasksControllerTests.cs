@@ -57,6 +57,69 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
     }
 
     [Fact]
+    public async Task CreateAndUpdate_WithPlanningMetadata_PersistsAndReturnsMetadata()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.metadata.persist@example.com");
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/tasks");
+        createRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        createRequest.Content = JsonContent.Create(new
+        {
+            title = "Prepare release checklist",
+            description = "Align release plan",
+            dueAtUtc = "2026-05-05T15:00:00Z",
+            priority = "medium",
+            category = "work",
+            difficulty = "hard",
+            energyLevel = "high",
+            contextTag = "Office",
+            effortPoints = 8
+        });
+
+        var createResponse = await _client.SendAsync(createRequest);
+        var createPayload = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        Assert.Equal("hard", createPayload.GetProperty("difficulty").GetString());
+        Assert.Equal("high", createPayload.GetProperty("energyLevel").GetString());
+        Assert.Equal("office", createPayload.GetProperty("contextTag").GetString());
+        Assert.Equal(8, createPayload.GetProperty("effortPoints").GetInt32());
+
+        var taskId = createPayload.GetProperty("id").GetGuid();
+
+        using var updateRequest = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/tasks/{taskId}");
+        updateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        updateRequest.Content = JsonContent.Create(new
+        {
+            title = "Prepare release checklist",
+            description = "Align release plan and approvals",
+            dueAtUtc = "2026-05-06T15:00:00Z",
+            priority = "high",
+            category = "work",
+            difficulty = "medium",
+            energyLevel = "low",
+            contextTag = "home",
+            effortPoints = 5
+        });
+
+        var updateResponse = await _client.SendAsync(updateRequest);
+        var updatePayload = await updateResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        Assert.Equal("medium", updatePayload.GetProperty("difficulty").GetString());
+        Assert.Equal("low", updatePayload.GetProperty("energyLevel").GetString());
+        Assert.Equal("home", updatePayload.GetProperty("contextTag").GetString());
+        Assert.Equal(5, updatePayload.GetProperty("effortPoints").GetInt32());
+
+        var persistedTask = await _factory.FindTaskByIdAsync(taskId);
+        Assert.NotNull(persistedTask);
+        Assert.Equal(TaskDifficulty.Medium, persistedTask!.Difficulty);
+        Assert.Equal(TaskEnergyLevel.Low, persistedTask.EnergyLevel);
+        Assert.Equal("home", persistedTask.ContextTag);
+        Assert.Equal(5, persistedTask.EffortPoints);
+    }
+
+    [Fact]
     public async Task Create_WithInvalidPayload_ReturnsValidationProblemDetailsAndDoesNotPersist()
     {
         var caller = await RegisterAndLoginWithUserAsync("tasks.create.invalid@example.com");
@@ -234,6 +297,128 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
 
         Assert.Equal(1, payload.GetProperty("summary").GetProperty("activeCount").GetInt32());
         Assert.Equal(1, payload.GetProperty("summary").GetProperty("completedCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task List_WithEnergyAndContextFilters_ReturnsOnlyMatchingOwnedTasks()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.list.planning-filters@example.com");
+        var baseTime = new DateTime(2026, 5, 1, 9, 0, 0, DateTimeKind.Utc);
+
+        var matchingTask = await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Match filters",
+            Description = "Energy and context match",
+            Priority = "medium",
+            Category = "work",
+            Difficulty = TaskDifficulty.Easy,
+            EnergyLevel = TaskEnergyLevel.High,
+            ContextTag = "office",
+            IsCompleted = false,
+            CreatedAtUtc = baseTime,
+            UpdatedAtUtc = baseTime
+        });
+
+        await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Non-matching task",
+            Description = "Different context",
+            Priority = "medium",
+            Category = "work",
+            Difficulty = TaskDifficulty.Easy,
+            EnergyLevel = TaskEnergyLevel.High,
+            ContextTag = "home",
+            IsCompleted = false,
+            CreatedAtUtc = baseTime.AddMinutes(1),
+            UpdatedAtUtc = baseTime.AddMinutes(1)
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/tasks?state=active&energyLevel=high&contextTag=office");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var items = payload.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal(matchingTask.Id, items[0].GetProperty("id").GetGuid());
+        Assert.Equal("high", items[0].GetProperty("energyLevel").GetString());
+        Assert.Equal("office", items[0].GetProperty("contextTag").GetString());
+    }
+
+    [Fact]
+    public async Task List_WithTitleAndPriorityFilters_ReturnsOnlyMatchingOwnedTasks()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.list.title-priority-filters@example.com");
+        var baseTime = new DateTime(2026, 5, 1, 10, 0, 0, DateTimeKind.Utc);
+
+        var matchingTask = await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Plan sprint board",
+            Description = "Match title and priority",
+            Priority = "high",
+            Category = "work",
+            Difficulty = TaskDifficulty.Medium,
+            EnergyLevel = TaskEnergyLevel.High,
+            ContextTag = "office",
+            IsCompleted = false,
+            CreatedAtUtc = baseTime,
+            UpdatedAtUtc = baseTime
+        });
+
+        await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Plan sprint retrospective",
+            Description = "Title matches but priority differs",
+            Priority = "medium",
+            Category = "work",
+            Difficulty = TaskDifficulty.Medium,
+            EnergyLevel = TaskEnergyLevel.High,
+            ContextTag = "office",
+            IsCompleted = false,
+            CreatedAtUtc = baseTime.AddMinutes(1),
+            UpdatedAtUtc = baseTime.AddMinutes(1)
+        });
+
+        await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Review roadmap",
+            Description = "Priority matches but title differs",
+            Priority = "high",
+            Category = "work",
+            Difficulty = TaskDifficulty.Easy,
+            EnergyLevel = TaskEnergyLevel.Medium,
+            ContextTag = "home",
+            IsCompleted = false,
+            CreatedAtUtc = baseTime.AddMinutes(2),
+            UpdatedAtUtc = baseTime.AddMinutes(2)
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/tasks?state=active&title=sprint&priority=high");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var items = payload.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal(matchingTask.Id, items[0].GetProperty("id").GetGuid());
+        Assert.Equal("high", items[0].GetProperty("priority").GetString());
+        Assert.Contains("sprint", items[0].GetProperty("title").GetString()!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -458,6 +643,176 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal(1, completionEvents);
         Assert.Equal(1, taskCompletedEvents);
         Assert.Equal(1, xpLedgerEntries);
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_WithSingleMissedDay_ConsumesWeeklyRecoveryTokenAndWritesAuditEvents()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.recovery-token@example.com");
+        await _factory.SetUserTimeZoneAsync(caller.UserId, "UTC");
+
+        var historicalTask = await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Historical completion",
+            Description = string.Empty,
+            Priority = "medium",
+            Category = "general",
+            IsCompleted = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-3),
+            UpdatedAtUtc = DateTime.UtcNow.AddDays(-2)
+        });
+
+        var historicalCompletedAtUtc = DateTime.UtcNow.AddDays(-2);
+        await _factory.AddTaskCompletionEventAsync(new TaskCompletionEvent
+        {
+            Id = Guid.NewGuid(),
+            TaskId = historicalTask.Id,
+            OwnerId = caller.UserId,
+            EventName = "TaskCompleted",
+            ResultingIsCompleted = true,
+            IdempotencyKey = Guid.NewGuid().ToString(),
+            OccurredAtUtc = historicalCompletedAtUtc,
+            CreatedAtUtc = historicalCompletedAtUtc
+        });
+
+        var task = await SeedTaskAsync(caller.UserId, "Recovery completion", false, DateTime.UtcNow.AddMinutes(-5));
+
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        request.Content = JsonContent.Create(new { isCompleted = true });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("continue", payload.GetProperty("progression").GetProperty("streak").GetProperty("outcome").GetString());
+        Assert.Equal(3, payload.GetProperty("progression").GetProperty("streak").GetProperty("currentStreakDays").GetInt32());
+
+        var grantEvents = await _factory.CountStreakRecoveryTokenEventsAsync(caller.UserId, StreakRecoveryTokenEventType.Granted);
+        var consumeEvents = await _factory.CountStreakRecoveryTokenEventsAsync(caller.UserId, StreakRecoveryTokenEventType.Consumed);
+        Assert.Equal(1, grantEvents);
+        Assert.Equal(1, consumeEvents);
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_AppliesDifficultyXpMappingDeterministically()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.difficulty-mapping@example.com");
+
+        var task = await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Hard completion",
+            Description = "Hard task",
+            Priority = "high",
+            Category = "work",
+            Difficulty = TaskDifficulty.Hard,
+            EnergyLevel = TaskEnergyLevel.High,
+            ContextTag = "office",
+            IsCompleted = false,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-4)
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        request.Content = JsonContent.Create(new
+        {
+            isCompleted = true
+        });
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(30, payload.GetProperty("progression").GetProperty("xpGranted").GetInt32());
+    }
+
+    [Fact]
+    public async Task ToggleCompletion_ReopenAfterDifficultyChange_CompensatesOriginalAwardThenRecomputes()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.recompute-after-difficulty-change@example.com");
+
+        var task = await _factory.AddTaskAsync(new TaskItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = caller.UserId,
+            Title = "Difficulty recompute",
+            Description = "Verify deterministic compensation",
+            Priority = "medium",
+            Category = "work",
+            Difficulty = TaskDifficulty.Easy,
+            EnergyLevel = TaskEnergyLevel.Medium,
+            ContextTag = "office",
+            IsCompleted = false,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-9)
+        });
+
+        using var completeRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        completeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        completeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        completeRequest.Content = JsonContent.Create(new { isCompleted = true });
+
+        var completeResponse = await _client.SendAsync(completeRequest);
+        var completePayload = await completeResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        Assert.Equal(10, completePayload.GetProperty("progression").GetProperty("xpGranted").GetInt32());
+
+        using var updateRequest = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/tasks/{task.Id}");
+        updateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        updateRequest.Content = JsonContent.Create(new
+        {
+            title = "Difficulty recompute",
+            description = "Verify deterministic compensation",
+            dueAtUtc = (DateTime?)null,
+            priority = "medium",
+            category = "work",
+            difficulty = "hard",
+            energyLevel = "medium",
+            contextTag = "office",
+            effortPoints = (int?)null
+        });
+
+        var updateResponse = await _client.SendAsync(updateRequest);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+
+        using var reopenRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        reopenRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        reopenRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        reopenRequest.Content = JsonContent.Create(new { isCompleted = false });
+
+        var reopenResponse = await _client.SendAsync(reopenRequest);
+        var reopenPayload = await reopenResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, reopenResponse.StatusCode);
+        Assert.Equal(-10, reopenPayload.GetProperty("progression").GetProperty("xpGranted").GetInt32());
+
+        using var recompleteRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        recompleteRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        recompleteRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        recompleteRequest.Content = JsonContent.Create(new { isCompleted = true });
+
+        var recompleteResponse = await _client.SendAsync(recompleteRequest);
+        var recompletePayload = await recompleteResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, recompleteResponse.StatusCode);
+        Assert.Equal(30, recompletePayload.GetProperty("progression").GetProperty("xpGranted").GetInt32());
+
+        using var xpSummaryRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/progress/xp-summary");
+        xpSummaryRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var xpSummaryResponse = await _client.SendAsync(xpSummaryRequest);
+        var xpSummaryPayload = await xpSummaryResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, xpSummaryResponse.StatusCode);
+        Assert.Equal(30, xpSummaryPayload.GetProperty("totalXp").GetInt32());
     }
 
     [Fact]
@@ -706,6 +1061,84 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
     }
 
     [Fact]
+    public async Task ToggleCompletion_ReopenWithDuplicateRequest_CompensatesXpExactlyOnceAndKeepsDailySnapshotsConsistent()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.completion.reopen.idempotent@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Reopen idempotency", false, DateTime.UtcNow.AddMinutes(-10));
+
+        using var completeRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        completeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        completeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        completeRequest.Content = JsonContent.Create(new { isCompleted = true });
+
+        var completeResponse = await _client.SendAsync(completeRequest);
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+
+        var reopenKey = Guid.NewGuid().ToString();
+
+        using var reopenRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        reopenRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        reopenRequest.Headers.Add("Idempotency-Key", reopenKey);
+        reopenRequest.Content = JsonContent.Create(new { isCompleted = false });
+
+        var reopenResponse = await _client.SendAsync(reopenRequest);
+        var reopenPayload = await reopenResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        using var replayRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/tasks/{task.Id}/completion");
+        replayRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+        replayRequest.Headers.Add("Idempotency-Key", reopenKey);
+        replayRequest.Content = JsonContent.Create(new { isCompleted = false });
+
+        var replayResponse = await _client.SendAsync(replayRequest);
+        var replayPayload = await replayResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, reopenResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
+        Assert.False(reopenPayload.GetProperty("task").GetProperty("isCompleted").GetBoolean());
+        Assert.Equal(-10, reopenPayload.GetProperty("progression").GetProperty("xpGranted").GetInt32());
+        Assert.False(reopenPayload.GetProperty("progression").GetProperty("idempotentReplay").GetBoolean());
+        Assert.True(replayPayload.GetProperty("progression").GetProperty("idempotentReplay").GetBoolean());
+        Assert.Equal(
+            reopenPayload.GetProperty("progression").GetProperty("completionEventId").GetGuid(),
+            replayPayload.GetProperty("progression").GetProperty("completionEventId").GetGuid());
+        Assert.Equal(
+            reopenPayload.GetProperty("progression").GetProperty("xpGranted").GetInt32(),
+            replayPayload.GetProperty("progression").GetProperty("xpGranted").GetInt32());
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.False(persistedTask!.IsCompleted);
+
+        var completionEvents = await _factory.CountTaskCompletionEventsAsync(task.Id);
+        var taskCompletedEvents = await _factory.CountTaskCompletedEventsAsync(task.Id);
+        var xpLedgerEntries = await _factory.CountXpLedgerEntriesAsync(task.Id);
+        Assert.Equal(2, completionEvents);
+        Assert.Equal(1, taskCompletedEvents);
+        Assert.Equal(2, xpLedgerEntries);
+
+        using var xpSummaryRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/progress/xp-summary");
+        xpSummaryRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var xpSummaryResponse = await _client.SendAsync(xpSummaryRequest);
+        var xpSummaryPayload = await xpSummaryResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, xpSummaryResponse.StatusCode);
+        Assert.Equal(0, xpSummaryPayload.GetProperty("totalXp").GetInt32());
+
+        using var trendRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/progress/trend?granularity=daily&windowDays=7");
+        trendRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var trendResponse = await _client.SendAsync(trendRequest);
+        var trendPayload = await trendResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, trendResponse.StatusCode);
+
+        var trendItems = trendPayload.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(0, trendItems.Sum(item => item.GetProperty("completedTaskCount").GetInt32()));
+        Assert.Equal(0, trendItems.Sum(item => item.GetProperty("xpGranted").GetInt32()));
+    }
+
+    [Fact]
     public async Task ToggleCompletion_WithInvalidStoredTimeZone_ReturnsValidationProblemDetails()
     {
         var caller = await RegisterAndLoginWithUserAsync("tasks.completion.invalid-timezone@example.com");
@@ -800,6 +1233,31 @@ public class TasksControllerTests : IClassFixture<AuthTestFactory>
         Assert.Empty(listPayload.GetProperty("items").EnumerateArray());
         Assert.Equal(0, listPayload.GetProperty("summary").GetProperty("activeCount").GetInt32());
         Assert.Equal(0, listPayload.GetProperty("summary").GetProperty("completedCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Delete_WithCompletedOwnedTask_ReturnsConflictProblemDetailsAndPreservesTask()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("tasks.delete.completed.blocked@example.com");
+        var task = await SeedTaskAsync(caller.UserId, "Completed delete guard", true, DateTime.UtcNow.AddMinutes(-2));
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/tasks/{task.Id}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("https://api.tasktracker.local/problems/conflict", payload.GetProperty("type").GetString());
+        Assert.Equal("Conflict", payload.GetProperty("title").GetString());
+        Assert.Equal(409, payload.GetProperty("status").GetInt32());
+        Assert.Equal("tasks.delete.completed.blocked", payload.GetProperty("code").GetString());
+        Assert.Contains("cannot be deleted", payload.GetProperty("detail").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("traceId").GetString()));
+
+        var persistedTask = await _factory.FindTaskByIdAsync(task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.True(persistedTask!.IsCompleted);
     }
 
     [Fact]

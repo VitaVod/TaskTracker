@@ -727,6 +727,170 @@ So that failures are diagnosed and recovered quickly.
 **Then** success/failure rates, retries, and error classes are observable
 **And** failure events include enough context for support/admin troubleshooting.
 
+## Epic 8: Progression Integrity, Momentum UX, and Public Profiles
+
+Close progression trust gaps and deliver the next engagement wave by hardening XP/streak rules, improving momentum usability, and expanding profile/privacy-aware social features.
+
+### Story 8.1: Enforce Progression Integrity for Task State and Deletion Rules
+
+As a user,
+I want XP and completed counters to remain fair and deterministic,
+So that my progress cannot be lost by destructive or inconsistent task transitions.
+
+**Acceptance Criteria:**
+
+**Given** a completed task
+**When** delete is requested
+**Then** deletion is rejected by business rules
+**And** user is guided to archive/hide instead.
+
+**Given** a task transitions from completed to active
+**When** transition succeeds
+**Then** awarded XP is compensated and completed-task counter is decremented exactly once
+**And** event processing remains idempotent.
+
+### Story 8.2: Extend Task Model with Difficulty and Planning Metadata
+
+As a user,
+I want to classify tasks by difficulty, energy, and context,
+So that planning is more realistic and rewards match effort.
+
+**Acceptance Criteria:**
+
+**Given** task create or update
+**When** metadata is submitted
+**Then** difficulty, energy level, context tag, effort points, and predicted duration are validated and stored.
+
+**Given** task completion
+**When** XP is awarded
+**Then** difficulty mapping applies deterministically (easy 10, medium 20, hard 30)
+**And** repeated completion events do not double-award XP.
+
+### Story 8.3: Build Level Thresholds and Multi-Band XP Progress Bar
+
+As a user,
+I want to see levels and a color-banded XP bar,
+So that long-term progression is clear and motivating.
+
+**Acceptance Criteria:**
+
+**Given** current XP and thresholds
+**When** dashboard progress renders
+**Then** current level, next threshold, and percent-to-next-level are shown.
+
+**Given** level transitions
+**When** user reaches levels 3, 5, 10, 20, 30, and 50
+**Then** configured color bands are applied accessibly
+**And** non-color cues still communicate status.
+
+### Story 8.4: Add Weekly Recovery Token and Near-Miss Streak Nudges
+
+As a user,
+I want occasional streak protection and timely nudges,
+So that a single missed day does not fully break momentum.
+
+**Acceptance Criteria:**
+
+**Given** streak evaluation in user timezone
+**When** a missed day occurs and weekly token is available
+**Then** one recovery token is consumed and streak continuity is preserved
+**And** token lifecycle is auditable.
+
+**Given** user is one task short of preserving streak tier
+**When** nudge window is reached and preferences allow
+**Then** a near-miss reminder is sent at most once per local day.
+
+### Story 8.5: Redesign Momentum Summary with Daily Detail and Month Heatmap
+
+As a user,
+I want a readable momentum overview with drill-down,
+So that I can understand daily progress trends and act on them.
+
+**Acceptance Criteria:**
+
+**Given** momentum summary loads
+**When** historical data exists
+**Then** responsive card/list presentation replaces unwrapped table layout
+**And** each summary item links to day-level details.
+
+**Given** monthly activity visualization
+**When** heatmap renders
+**Then** last-month day cells reflect activity intensity
+**And** selected day opens detailed statistics view.
+
+### Story 8.6: Improve Task and Dashboard UX Navigation and Empty States
+
+As a user,
+I want clearer routing and empty-state guidance,
+So that key actions are obvious across dashboard and task views.
+
+**Acceptance Criteria:**
+
+**Given** All Tasks filter is selected and no active tasks exist
+**When** list view renders
+**Then** create-task empty state is shown using the Active Tasks pattern.
+
+**Given** primary app surfaces
+**When** navigation renders
+**Then** header tabs expose dashboard/tasks/momentum/leaderboard/profile routes
+**And** active route highlighting and deep links remain correct.
+
+**Given** task create/edit description input
+**When** user resizes textarea
+**Then** resize is limited to vertical direction and layout remains stable.
+
+### Story 8.7: Expand Profile and Preferences with Secure Email Change
+
+As a user,
+I want clearer participation controls and secure email change,
+So that privacy and account identity settings are easier to manage.
+
+**Acceptance Criteria:**
+
+**Given** profile preferences page
+**When** leaderboard participation control renders
+**Then** control is visually clear and accessible
+**And** saved setting updates participation behavior consistently.
+
+**Given** authenticated user requests email change
+**When** current password and new email are submitted
+**Then** verification flow is initiated and email is updated only after confirmation.
+
+### Story 8.8: Deliver Public Profile Experience with Anonymous Participation Guardrails
+
+As a user,
+I want profile pages that respect visibility settings,
+So that public stats are available only for opted-in participants.
+
+**Acceptance Criteria:**
+
+**Given** a public participant profile is requested
+**When** page loads
+**Then** profile shows approved statistics and momentum highlights.
+
+**Given** an anonymous participant profile is requested
+**When** page loads
+**Then** statistics are not displayed
+**And** UI shows the anonymous-participant message.
+
+### Story 8.9: Harden Transactional Email Deliverability and Recovery Flows
+
+As a platform operator,
+I want reliable recovery and notification delivery,
+So that users consistently receive security-critical and reminder emails.
+
+**Acceptance Criteria:**
+
+**Given** transactional email pipeline executes
+**When** provider accepts or rejects messages
+**Then** delivery status and provider identifiers are logged for diagnostics
+**And** failed sends follow bounded retry policy.
+
+**Given** recovery flow is triggered
+**When** email cannot be delivered
+**Then** user receives actionable guidance and support-safe error messaging
+**And** operational alerts surface persistent failure patterns.
+
 ## Final Validation Summary
 
 - All FRs (FR1-FR48) are mapped to at least one epic and covered by stories.
@@ -735,3 +899,4 @@ So that failures are diagnosed and recovered quickly.
 - UX design requirements are covered across Stories 2.6, 3.4, 3.5, 4.5, and 5.3.
 - Internal-role restrictions and auditability are covered in Epics 1 and 6.
 - Integration parity requirements are covered in Epic 7.
+- Expansion scope from 2026-05-03 briefing is decomposed into Epic 8 Stories 8.1 through 8.9.

@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { provideRouter, Router } from '@angular/router';
+import { of, Subject, throwError } from 'rxjs';
 import { ProgressTrendSummary } from '../../shared/models/progress.models';
 import { AuthService } from '../../shared/services/auth.service';
 import { ProgressService } from '../../shared/services/progress.service';
@@ -15,7 +15,7 @@ describe('DashboardComponent', () => {
   let statisticsService: jasmine.SpyObj<StatisticsService>;
 
   beforeEach(async () => {
-    authService = jasmine.createSpyObj<AuthService>('AuthService', ['logout']);
+    authService = jasmine.createSpyObj<AuthService>('AuthService', ['logout', 'hasRole']);
     progressService = jasmine.createSpyObj<ProgressService>('ProgressService', [
       'getXpSummary',
       'getStreakSnapshot',
@@ -24,10 +24,25 @@ describe('DashboardComponent', () => {
     statisticsService = jasmine.createSpyObj<StatisticsService>('StatisticsService', ['getGlobalStatistics']);
 
     authService.logout.and.returnValue(of(void 0));
+  authService.hasRole.and.returnValue(false);
     progressService.getXpSummary.and.returnValue(of({
       totalXp: 120,
       ledgerEntryCount: 12,
-      lastGrantedAtUtc: '2026-04-28T09:15:00Z'
+      lastGrantedAtUtc: '2026-04-28T09:15:00Z',
+      levelProgress: {
+        currentLevel: 2,
+        currentLevelThresholdXp: 100,
+        nextLevel: 3,
+        nextLevelThresholdXp: 225,
+        percentToNextLevel: 16,
+        bandMilestoneLevels: [3, 5, 10, 20, 30, 50],
+        reachedBandCount: 0,
+        nextBandLevel: 3
+      },
+      outcomeExplanation: {
+        reasonCode: 'xp-earned-from-completions',
+        message: 'XP increased from eligible task completion events processed by the progression engine.'
+      }
     }));
     progressService.getStreakSnapshot.and.returnValue(of({
       outcome: 'continue',
@@ -36,7 +51,15 @@ describe('DashboardComponent', () => {
       timeZoneId: 'UTC',
       evaluationWindowStartUtc: '2026-04-27T00:00:00Z',
       evaluationWindowEndUtc: '2026-04-28T00:00:00Z',
-      lastEvaluatedAtUtc: '2026-04-28T09:15:00Z'
+      lastEvaluatedAtUtc: '2026-04-28T09:15:00Z',
+      isRecoveryPromptVisible: false,
+      recoveryReason: null,
+      recommendedAction: null,
+      outcomeExplanation: {
+        reasonCode: 'streak-continued',
+        message: 'Your streak is active at 5 day(s) because completions stayed within the allowed local-day window.'
+      },
+      recoveryExplanation: null
     }));
     progressService.getTrendSummary.and.returnValue(of(buildTrendSummary([1, 1, 1, 1, 1, 1, 0, 2, 1, 0, 1, 2, 2, 1])));
     statisticsService.getGlobalStatistics.and.returnValue(of({
@@ -62,7 +85,7 @@ describe('DashboardComponent', () => {
   it('loads dashboard progress snapshot on init', () => {
     expect(progressService.getXpSummary).toHaveBeenCalled();
     expect(progressService.getStreakSnapshot).toHaveBeenCalled();
-    expect(progressService.getTrendSummary).toHaveBeenCalledWith('daily', 30);
+    expect(progressService.getTrendSummary).toHaveBeenCalledWith('daily', 14);
     expect(statisticsService.getGlobalStatistics).toHaveBeenCalled();
     expect(component.progressState).toBe('ready');
     expect(component.momentumState).toBe('ready');
@@ -70,6 +93,13 @@ describe('DashboardComponent', () => {
     expect(component.xpSummary?.totalXp).toBe(120);
     expect(component.momentumSummary?.totalCompletedInWindow).toBe(15);
     expect(component.globalStatistics?.totalTasksCreated).toBe(400);
+  });
+
+  it('hides weekly granularity filter in momentum controls', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const weeklyOption = compiled.querySelector('option[value="weekly"]');
+
+    expect(weeklyOption).toBeNull();
   });
 
   it('shows error state when both progress requests fail', () => {
@@ -88,7 +118,21 @@ describe('DashboardComponent', () => {
     component.xpSummary = {
       totalXp: 300,
       ledgerEntryCount: 30,
-      lastGrantedAtUtc: '2026-04-28T10:00:00Z'
+      lastGrantedAtUtc: '2026-04-28T10:00:00Z',
+      levelProgress: {
+        currentLevel: 3,
+        currentLevelThresholdXp: 225,
+        nextLevel: 4,
+        nextLevelThresholdXp: 375,
+        percentToNextLevel: 50,
+        bandMilestoneLevels: [3, 5, 10, 20, 30, 50],
+        reachedBandCount: 1,
+        nextBandLevel: 5
+      },
+      outcomeExplanation: {
+        reasonCode: 'xp-earned-from-completions',
+        message: 'XP increased from eligible task completion events processed by the progression engine.'
+      }
     };
 
     component.streakSnapshot = {
@@ -98,7 +142,15 @@ describe('DashboardComponent', () => {
       timeZoneId: 'UTC',
       evaluationWindowStartUtc: '2026-04-27T00:00:00Z',
       evaluationWindowEndUtc: '2026-04-28T00:00:00Z',
-      lastEvaluatedAtUtc: '2026-04-28T10:00:00Z'
+      lastEvaluatedAtUtc: '2026-04-28T10:00:00Z',
+      isRecoveryPromptVisible: false,
+      recoveryReason: null,
+      recommendedAction: null,
+      outcomeExplanation: {
+        reasonCode: 'streak-continued',
+        message: 'Your streak is active at 8 day(s) because completions stayed within the allowed local-day window.'
+      },
+      recoveryExplanation: null
     };
 
     progressService.getXpSummary.and.returnValue(throwError(() => ({ title: 'Failed' })));
@@ -109,7 +161,15 @@ describe('DashboardComponent', () => {
       timeZoneId: 'UTC',
       evaluationWindowStartUtc: '2026-04-28T00:00:00Z',
       evaluationWindowEndUtc: '2026-04-29T00:00:00Z',
-      lastEvaluatedAtUtc: '2026-04-28T11:00:00Z'
+      lastEvaluatedAtUtc: '2026-04-28T11:00:00Z',
+      isRecoveryPromptVisible: false,
+      recoveryReason: null,
+      recommendedAction: null,
+      outcomeExplanation: {
+        reasonCode: 'streak-continued',
+        message: 'Your streak is active at 9 day(s) because completions stayed within the allowed local-day window.'
+      },
+      recoveryExplanation: null
     }));
 
     component.refreshProgress();
@@ -179,6 +239,27 @@ describe('DashboardComponent', () => {
     expect(component.trendDirectionIcon(component.momentumSummary?.direction)).toBe('^');
   });
 
+  it('routes to day detail when a trend card is selected', () => {
+    const router = TestBed.inject(Router);
+    const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const trendCard = compiled.querySelector('.trend-card') as HTMLButtonElement;
+    trendCard.click();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/day', '2026-04-01']);
+  });
+
+  it('supports keyboard activation for trend-card day navigation', () => {
+    const router = TestBed.inject(Router);
+    const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+
+    const keyboardEvent = new KeyboardEvent('keydown', { key: 'Enter' });
+    component.onTrendItemKeydown(keyboardEvent, '2026-04-03T00:00:00Z');
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/day', '2026-04-03']);
+  });
+
   it('maps streak status labels from snapshot outcomes', () => {
     component.streakSnapshot = {
       outcome: 'restart',
@@ -187,10 +268,80 @@ describe('DashboardComponent', () => {
       timeZoneId: 'UTC',
       evaluationWindowStartUtc: '2026-04-27T00:00:00Z',
       evaluationWindowEndUtc: '2026-04-28T00:00:00Z',
-      lastEvaluatedAtUtc: '2026-04-28T09:15:00Z'
+      lastEvaluatedAtUtc: '2026-04-28T09:15:00Z',
+      isRecoveryPromptVisible: true,
+      recoveryReason: 'streak-restarted',
+      recommendedAction: 'maintain-tomorrow',
+      outcomeExplanation: {
+        reasonCode: 'streak-restarted',
+        message: 'Your streak restarted after a missed continuity window and now counts from your latest eligible completion.'
+      },
+      recoveryExplanation: {
+        reasonCode: 'streak-restarted',
+        message: 'Your streak has restarted. Completing at least one eligible task in the next local-day window keeps it active.'
+      }
     };
 
     expect(component.streakStatusLabel()).toBe('Continuity restarted');
+  });
+
+  it('renders recovery prompt with deterministic missed-day guidance', () => {
+    progressService.getStreakSnapshot.and.returnValue(of({
+      outcome: 'continue',
+      currentStreakDays: 6,
+      longestStreakDays: 11,
+      timeZoneId: 'UTC',
+      evaluationWindowStartUtc: '2026-04-24T00:00:00Z',
+      evaluationWindowEndUtc: '2026-04-25T00:00:00Z',
+      lastEvaluatedAtUtc: '2026-04-25T09:15:00Z',
+      isRecoveryPromptVisible: true,
+      recoveryReason: 'missed-day-detected',
+      recommendedAction: 'complete-task-today',
+      outcomeExplanation: {
+        reasonCode: 'streak-continued',
+        message: 'Your streak is active at 6 day(s) because completions stayed within the allowed local-day window.'
+      },
+      recoveryExplanation: {
+        reasonCode: 'missed-day-detected',
+        message: 'A missed local day was detected. Completing one eligible task today starts the next streak immediately.'
+      }
+    }));
+
+    fixture = TestBed.createComponent(DashboardComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const recoveryCard = compiled.querySelector('.recovery-card');
+    expect(recoveryCard).not.toBeNull();
+    expect(recoveryCard?.textContent).toContain('Recovery prompt');
+    expect(recoveryCard?.textContent).toContain('A missed local day was detected');
+    expect(recoveryCard?.textContent).toContain('Complete a task now');
+  });
+
+  it('hides recovery prompt when server signal is not visible', () => {
+    component.streakSnapshot = {
+      outcome: 'continue',
+      currentStreakDays: 8,
+      longestStreakDays: 14,
+      timeZoneId: 'UTC',
+      evaluationWindowStartUtc: '2026-04-27T00:00:00Z',
+      evaluationWindowEndUtc: '2026-04-28T00:00:00Z',
+      lastEvaluatedAtUtc: '2026-04-28T10:00:00Z',
+      isRecoveryPromptVisible: false,
+      recoveryReason: null,
+      recommendedAction: null,
+      outcomeExplanation: {
+        reasonCode: 'streak-continued',
+        message: 'Your streak is active at 8 day(s) because completions stayed within the allowed local-day window.'
+      },
+      recoveryExplanation: null
+    };
+
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.recovery-card')).toBeNull();
   });
 
   it('shows statistics error state when global stats request fails', () => {
@@ -211,6 +362,94 @@ describe('DashboardComponent', () => {
     };
 
     expect(component.completionRateLabel()).toBe('38%');
+  });
+
+  it('renders server-provided XP and streak explanation text', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('XP increased from eligible task completion events processed by the progression engine.');
+    expect(compiled.textContent).toContain('Your streak is active at 5 day(s) because completions stayed within the allowed local-day window.');
+  });
+
+  it('renders XP level card with non-color-only milestone cues', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.textContent).toContain('Level 2');
+    expect(compiled.textContent).toContain('Next level 3 at 225 XP');
+
+    const activeBand = compiled.querySelector('.xp-band-item[data-state="active"]');
+    expect(activeBand?.textContent).toContain('Level 3');
+    expect(activeBand?.textContent).toContain('>');
+  });
+
+  it('ignores stale progress refresh result and keeps latest state', () => {
+    progressService.getXpSummary.and.returnValues(
+      of({
+        totalXp: 120,
+        ledgerEntryCount: 12,
+        lastGrantedAtUtc: '2026-04-28T09:15:00Z',
+        levelProgress: {
+          currentLevel: 2,
+          currentLevelThresholdXp: 100,
+          nextLevel: 3,
+          nextLevelThresholdXp: 225,
+          percentToNextLevel: 16,
+          bandMilestoneLevels: [3, 5, 10, 20, 30, 50],
+          reachedBandCount: 0,
+          nextBandLevel: 3
+        },
+        outcomeExplanation: {
+          reasonCode: 'xp-earned-from-completions',
+          message: 'XP increased from eligible task completion events processed by the progression engine.'
+        }
+      }),
+      of({
+        totalXp: 180,
+        ledgerEntryCount: 18,
+        lastGrantedAtUtc: '2026-04-28T10:15:00Z',
+        levelProgress: {
+          currentLevel: 2,
+          currentLevelThresholdXp: 100,
+          nextLevel: 3,
+          nextLevelThresholdXp: 225,
+          percentToNextLevel: 64,
+          bandMilestoneLevels: [3, 5, 10, 20, 30, 50],
+          reachedBandCount: 0,
+          nextBandLevel: 3
+        },
+        outcomeExplanation: {
+          reasonCode: 'xp-earned-from-completions',
+          message: 'XP increased from eligible task completion events processed by the progression engine.'
+        }
+      })
+    );
+
+    component.refreshProgress();
+    component.refreshProgress();
+
+    expect(component.xpSummary?.totalXp).toBe(180);
+    expect(component.xpSummary?.levelProgress.percentToNextLevel).toBe(64);
+  });
+
+  it('ignores stale momentum refresh result and keeps latest trend snapshot', () => {
+    const firstTrendResponse = new Subject<ProgressTrendSummary>();
+    const secondTrendResponse = new Subject<ProgressTrendSummary>();
+
+    progressService.getTrendSummary.and.returnValues(
+      firstTrendResponse.asObservable(),
+      secondTrendResponse.asObservable()
+    );
+
+    component.refreshMomentum();
+    component.refreshMomentum();
+
+    secondTrendResponse.next(buildTrendSummary([1, 1, 1, 1, 1, 1, 1]));
+    secondTrendResponse.complete();
+
+    firstTrendResponse.next(buildTrendSummary([9, 9, 9, 9, 9, 9, 9]));
+    firstTrendResponse.complete();
+
+    expect(component.momentumSummary?.totalCompletedInWindow).toBe(7);
+    expect(component.momentumSummary?.recentCompletions).toBe(7);
   });
 });
 

@@ -54,6 +54,10 @@ select {
   padding: 0.75rem 0.85rem;
 }
 
+textarea {
+  resize: vertical;
+}
+
 button {
   margin-top: 0.8rem;
   border: 0;
@@ -73,6 +77,12 @@ button:disabled {
   margin: 0;
   color: #ffd0d0;
   font-size: 0.82rem;
+}
+
+.field-help {
+  margin: 0.2rem 0 0;
+  color: #c2d8e7;
+  font-size: 0.78rem;
 }
 
 .success {

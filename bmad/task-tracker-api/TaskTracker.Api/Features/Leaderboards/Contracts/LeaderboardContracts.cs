@@ -19,7 +19,22 @@ public record LeaderboardEntryResponse(
     string PublicIdentity,
     string IdentityMode,
     string AvatarMarker,
-    int MetricValue);
+    int MetricValue,
+    string? PublicProfileHandle);
+
+public record PublicProfileStatisticsResponse(
+    int CurrentStreakDays,
+    int LongestStreakDays,
+    int CompletedTaskCount,
+    int TotalXp,
+    DateTime? LastCompletedAtUtc);
+
+public record PublicProfileResponse(
+    string Visibility,
+    string? PublicIdentity,
+    string? AvatarMarker,
+    PublicProfileStatisticsResponse? Statistics,
+    string? Message);
 
 public record LeaderboardResponse(
     string Type,

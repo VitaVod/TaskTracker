@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { LeaderboardResponse } from '../../shared/models/leaderboard.models';
+import { AuthService } from '../../shared/services/auth.service';
 import { LeaderboardService } from '../../shared/services/leaderboard.service';
 import { LeaderboardComponent } from './leaderboard.component';
 
@@ -9,14 +10,21 @@ describe('LeaderboardComponent', () => {
   let fixture: ComponentFixture<LeaderboardComponent>;
   let component: LeaderboardComponent;
   let leaderboardService: jasmine.SpyObj<LeaderboardService>;
+  let authService: jasmine.SpyObj<AuthService>;
 
   beforeEach(async () => {
     leaderboardService = jasmine.createSpyObj<LeaderboardService>('LeaderboardService', ['getLeaderboard']);
     leaderboardService.getLeaderboard.and.returnValue(of(buildResponse('streak', 1, true)));
+    authService = jasmine.createSpyObj<AuthService>('AuthService', ['hasRole']);
+    authService.hasRole.and.returnValue(false);
 
     await TestBed.configureTestingModule({
       imports: [LeaderboardComponent],
-      providers: [{ provide: LeaderboardService, useValue: leaderboardService }, provideRouter([])]
+      providers: [
+        { provide: LeaderboardService, useValue: leaderboardService },
+        { provide: AuthService, useValue: authService },
+        provideRouter([])
+      ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(LeaderboardComponent);
@@ -107,6 +115,16 @@ describe('LeaderboardComponent', () => {
     expect(compiled.textContent).toContain('Anonymous participant');
   });
 
+  it('adds profile navigation links only for public participants', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const linkedIdentity = compiled.querySelector('a.identity-name');
+    const anonymousIdentity = Array.from(compiled.querySelectorAll('.identity-name'))
+      .find((node) => node.textContent?.includes('anon-12ab34cd'));
+
+    expect(linkedIdentity?.getAttribute('href')).toContain('/profile/public/p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(anonymousIdentity?.tagName.toLowerCase()).toBe('p');
+  });
+
   it('renders movement and pagination accessibility labels', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     const movement = compiled.querySelector('.movement-indicator');
@@ -132,14 +150,16 @@ function buildResponse(type: 'streak' | 'completedTasks', page: number, hasNextP
         publicIdentity: 'anon-12ab34cd',
         identityMode: 'anonymous',
         avatarMarker: 'A1',
-        metricValue: 14
+        metricValue: 14,
+        publicProfileHandle: null
       },
       {
         rank: 2,
         publicIdentity: 'SkyPilot',
         identityMode: 'public',
         avatarMarker: 'B2',
-        metricValue: 12
+        metricValue: 12,
+        publicProfileHandle: 'p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
       }
     ]
   };

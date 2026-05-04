@@ -18,7 +18,15 @@ public class User
 
     public string Role { get; set; } = "User";
 
-    public LeaderboardParticipationMode LeaderboardParticipationMode { get; set; } = LeaderboardParticipationMode.Hidden;
+    public LeaderboardParticipationMode LeaderboardParticipationMode { get; set; } = LeaderboardParticipationMode.Public;
+
+    public bool IsSuspiciousFlagged { get; set; }
+
+    public bool ReminderEmailEnabled { get; set; } = true;
+
+    public NotificationReminderCadence ReminderCadence { get; set; } = NotificationReminderCadence.Daily;
+
+    public bool AccountEmailEnabled { get; set; } = true;
 
     public DateTime CreatedAtUtc { get; set; }
 

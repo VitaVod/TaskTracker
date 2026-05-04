@@ -38,6 +38,8 @@ export interface MessageResponse {
   message: string;
 }
 
+export type AppUserRole = 'user' | 'admin' | 'support';
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly httpClient = inject(HttpClient);
@@ -126,6 +128,37 @@ export class AuthService {
     return payload.exp > nowInSeconds;
   }
 
+  getCurrentRole(): AppUserRole | null {
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      return null;
+    }
+
+    const payload = this.decodeJwtPayload(token);
+    const claimValue = this.extractRoleClaim(payload);
+    if (!claimValue) {
+      return null;
+    }
+
+    if (claimValue === 'admin') {
+      return 'admin';
+    }
+
+    if (claimValue === 'support') {
+      return 'support';
+    }
+
+    if (claimValue === 'user') {
+      return 'user';
+    }
+
+    return null;
+  }
+
+  hasRole(role: AppUserRole): boolean {
+    return this.getCurrentRole() === role;
+  }
+
   private storeTokens(response: { accessToken: string; refreshToken: string }): void {
     localStorage.setItem('accessToken', response.accessToken);
     localStorage.setItem('refreshToken', response.refreshToken);
@@ -136,7 +169,7 @@ export class AuthService {
     localStorage.removeItem('refreshToken');
   }
 
-  private decodeJwtPayload(token: string): { exp?: number } | null {
+  private decodeJwtPayload(token: string): { exp?: number; role?: string; [key: string]: unknown } | null {
     const segments = token.split('.');
     if (segments.length !== 3) {
       return null;
@@ -144,10 +177,28 @@ export class AuthService {
 
     try {
       const payload = this.base64UrlDecode(segments[1]);
-      return JSON.parse(payload) as { exp?: number };
+      return JSON.parse(payload) as { exp?: number; role?: string; [key: string]: unknown };
     } catch {
       return null;
     }
+  }
+
+  private extractRoleClaim(payload: { [key: string]: unknown } | null): string | null {
+    if (!payload) {
+      return null;
+    }
+
+    const directRole = payload['role'];
+    if (typeof directRole === 'string') {
+      return directRole.trim().toLowerCase();
+    }
+
+    const claimTypesRole = payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];
+    if (typeof claimTypesRole === 'string') {
+      return claimTypesRole.trim().toLowerCase();
+    }
+
+    return null;
   }
 
   private base64UrlDecode(value: string): string {

@@ -12,7 +12,7 @@ public class SharedViewCacheCoordinator(
     ILogger<SharedViewCacheCoordinator> logger,
     IHttpContextAccessor httpContextAccessor) : ISharedViewCacheCoordinator
 {
-    private const int LeaderboardSchemaVersion = 1;
+    private const int LeaderboardSchemaVersion = 2;
     private const int GlobalStatisticsSchemaVersion = 1;
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);

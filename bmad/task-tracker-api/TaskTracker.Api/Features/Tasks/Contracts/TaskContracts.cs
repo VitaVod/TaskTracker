@@ -18,21 +18,29 @@ public enum TaskListState
     All
 }
 
-public record TaskListQuery(string? State);
+public record TaskListQuery(string? State, string? Title, string? Priority, string? EnergyLevel, string? ContextTag);
 
 public record CreateTaskRequest(
     string? Title,
     string? Description,
     DateTime? DueAtUtc,
     string? Priority,
-    string? Category);
+    string? Category,
+    string? Difficulty,
+    string? EnergyLevel,
+    string? ContextTag,
+    int? EffortPoints);
 
 public record UpdateTaskRequest(
     string? Title,
     string? Description,
     DateTime? DueAtUtc,
     string? Priority,
-    string? Category);
+    string? Category,
+    string? Difficulty,
+    string? EnergyLevel,
+    string? ContextTag,
+    int? EffortPoints);
 
 public record ToggleTaskCompletionRequest(bool? IsCompleted);
 
@@ -65,6 +73,10 @@ public record TaskResponse(
     DateTime? DueAtUtc,
     string Priority,
     string Category,
+    string Difficulty,
+    string EnergyLevel,
+    string? ContextTag,
+    int? EffortPoints,
     bool IsCompleted,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);

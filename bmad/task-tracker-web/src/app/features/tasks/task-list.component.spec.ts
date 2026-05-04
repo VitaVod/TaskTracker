@@ -23,6 +23,11 @@ describe('TaskListComponent', () => {
           dueAtUtc: null,
           priority: 'medium',
           category: 'work',
+          difficulty: 'easy',
+          energyLevel: 'medium',
+          contextTag: null,
+          effortPoints: null,
+          predictedDurationMinutes: null,
           isCompleted: false,
           createdAtUtc: '2026-04-25T11:30:12Z',
           updatedAtUtc: '2026-04-25T11:30:12Z'
@@ -40,6 +45,11 @@ describe('TaskListComponent', () => {
       dueAtUtc: null,
       priority: 'high',
       category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: null,
+      effortPoints: null,
+      predictedDurationMinutes: null,
       isCompleted: false,
       createdAtUtc: '2026-04-25T11:30:12Z',
       updatedAtUtc: '2026-04-26T09:15:03Z'
@@ -52,6 +62,11 @@ describe('TaskListComponent', () => {
         dueAtUtc: null,
         priority: 'medium',
         category: 'work',
+        difficulty: 'easy',
+        energyLevel: 'medium',
+        contextTag: null,
+        effortPoints: null,
+        predictedDurationMinutes: null,
         isCompleted: true,
         createdAtUtc: '2026-04-25T11:30:12Z',
         updatedAtUtc: '2026-04-26T09:15:03Z'
@@ -70,7 +85,21 @@ describe('TaskListComponent', () => {
     progressService.getXpSummary.and.returnValue(of({
       totalXp: 110,
       ledgerEntryCount: 11,
-      lastGrantedAtUtc: '2026-04-26T09:15:03Z'
+      lastGrantedAtUtc: '2026-04-26T09:15:03Z',
+      levelProgress: {
+        currentLevel: 2,
+        currentLevelThresholdXp: 100,
+        nextLevel: 3,
+        nextLevelThresholdXp: 225,
+        percentToNextLevel: 8,
+        bandMilestoneLevels: [3, 5, 10, 20, 30, 50],
+        reachedBandCount: 0,
+        nextBandLevel: 3
+      },
+      outcomeExplanation: {
+        reasonCode: 'xp-earned-from-completions',
+        message: 'XP increased from eligible task completion events processed by the progression engine.'
+      }
     }));
     progressService.getStreakSnapshot.and.returnValue(of({
       outcome: 'continue',
@@ -79,7 +108,15 @@ describe('TaskListComponent', () => {
       timeZoneId: 'UTC',
       evaluationWindowStartUtc: '2026-04-25T00:00:00Z',
       evaluationWindowEndUtc: '2026-04-26T00:00:00Z',
-      lastEvaluatedAtUtc: '2026-04-26T09:15:03Z'
+      lastEvaluatedAtUtc: '2026-04-26T09:15:03Z',
+      isRecoveryPromptVisible: false,
+      recoveryReason: null,
+      recommendedAction: null,
+      outcomeExplanation: {
+        reasonCode: 'streak-continued',
+        message: 'Your streak is active at 4 day(s) because completions stayed within the allowed local-day window.'
+      },
+      recoveryExplanation: null
     }));
 
     await TestBed.configureTestingModule({
@@ -97,7 +134,7 @@ describe('TaskListComponent', () => {
   });
 
   it('loads all tasks by default on init', () => {
-    expect(taskService.getTasks).toHaveBeenCalledWith('all');
+    expect(taskService.getTasks).toHaveBeenCalledWith('all', undefined);
     expect(progressService.getXpSummary).toHaveBeenCalled();
     expect(progressService.getStreakSnapshot).toHaveBeenCalled();
     expect(component.activeCount).toBe(1);
@@ -207,6 +244,77 @@ describe('TaskListComponent', () => {
     expect(resetFilterButton.textContent).toContain('View all tasks');
   });
 
+  it('reuses active-task empty-state guidance when all filter has only completed tasks', () => {
+    taskService.getTasks.and.returnValues(
+      of({
+        items: [
+          {
+            id: 'completed-only-1',
+            title: 'Ship release notes',
+            description: 'done',
+            dueAtUtc: null,
+            priority: 'low',
+            category: 'work',
+            difficulty: 'easy',
+            energyLevel: 'low',
+            contextTag: null,
+            effortPoints: null,
+            predictedDurationMinutes: null,
+            isCompleted: true,
+            createdAtUtc: '2026-04-25T11:30:12Z',
+            updatedAtUtc: '2026-04-26T09:15:03Z'
+          }
+        ],
+        summary: { activeCount: 0, completedCount: 1 }
+      })
+    );
+
+    fixture = TestBed.createComponent(TaskListComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    const activeEmptyHeading = fixture.nativeElement.querySelector('.active-empty-state h3') as HTMLElement;
+    const activeEmptyMessage = fixture.nativeElement.querySelector('.active-empty-state .status') as HTMLElement;
+    const createButton = fixture.nativeElement.querySelector('.active-empty-state .create-primary') as HTMLAnchorElement;
+
+    expect(activeEmptyHeading.textContent).toContain('No active tasks found');
+    expect(activeEmptyMessage.textContent).toContain('Create your next task to start building momentum');
+    expect(createButton.textContent).toContain('Create a task');
+  });
+
+  it('limits task edit description textarea resizing to vertical only', () => {
+    const editButton = fixture.nativeElement.querySelector('button[aria-label="Edit task Plan sprint backlog"]') as HTMLButtonElement;
+    editButton.click();
+    fixture.detectChanges();
+
+    const descriptionTextarea = fixture.nativeElement.querySelector('textarea#edit-description') as HTMLTextAreaElement;
+    expect(descriptionTextarea.getAttribute('style')).toContain('resize: vertical');
+  });
+
+  it('renders planning filters in requested order', () => {
+    const labels = Array.from(
+      fixture.nativeElement.querySelectorAll('.planning-filter-grid label span') as NodeListOf<HTMLElement>
+    ).map((item) => item.textContent?.trim());
+
+    expect(labels).toEqual(['Title', 'Priority', 'Difficulty', 'Energy', 'Context']);
+  });
+
+  it('clears title and priority planning filters', () => {
+    component.titleFilterInput = 'Sprint';
+    component.selectedPriorityFilter = 'high';
+    component.selectedDifficultyFilter = 'medium';
+    component.selectedEnergyFilter = 'high';
+    component.contextFilterInput = 'office';
+
+    component.clearPlanningFilters();
+
+    expect(component.titleFilterInput).toBe('');
+    expect(component.selectedPriorityFilter).toBe('');
+    expect(component.selectedDifficultyFilter).toBe('');
+    expect(component.selectedEnergyFilter).toBe('');
+    expect(component.contextFilterInput).toBe('');
+  });
+
   it('shows loading placeholders while list request is in flight', () => {
     const pending = new Subject<any>();
     taskService.getTasks.and.returnValue(pending.asObservable());
@@ -261,6 +369,11 @@ describe('TaskListComponent', () => {
           dueAtUtc: null,
           priority: 'low',
           category: 'work',
+          difficulty: 'easy',
+          energyLevel: 'medium',
+          contextTag: null,
+          effortPoints: null,
+          predictedDurationMinutes: null,
           isCompleted: true,
           createdAtUtc: '2026-04-25T11:30:12Z',
           updatedAtUtc: '2026-04-25T12:30:12Z'
@@ -280,6 +393,11 @@ describe('TaskListComponent', () => {
           dueAtUtc: null,
           priority: 'medium',
           category: 'work',
+          difficulty: 'easy',
+          energyLevel: 'medium',
+          contextTag: null,
+          effortPoints: null,
+          predictedDurationMinutes: null,
           isCompleted: false,
           createdAtUtc: '2026-04-25T11:30:12Z',
           updatedAtUtc: '2026-04-25T12:30:12Z'
@@ -342,6 +460,11 @@ describe('TaskListComponent', () => {
             dueAtUtc: null,
             priority: 'low',
             category: 'personal',
+            difficulty: 'easy',
+            energyLevel: 'medium',
+            contextTag: null,
+            effortPoints: null,
+            predictedDurationMinutes: null,
             isCompleted: true,
             createdAtUtc: '2026-04-25T11:30:12Z',
             updatedAtUtc: '2026-04-25T12:30:12Z'
@@ -359,9 +482,20 @@ describe('TaskListComponent', () => {
     completedButton.click();
     fixture.detectChanges();
 
-    expect(taskService.getTasks).toHaveBeenCalledWith('completed');
+    expect(taskService.getTasks).toHaveBeenCalledWith('completed', undefined);
     expect(component.selectedFilter).toBe('completed');
     expect(component.liveMessage).toContain('completed');
+  });
+
+  it('toggles tab-switch animation phase when changing task-state tabs', () => {
+    const initialPhase = component.tabSwitchAnimationPhase;
+
+    component.setFilter('active');
+    const afterFirstSwitch = component.tabSwitchAnimationPhase;
+    component.setFilter('completed');
+
+    expect(afterFirstSwitch).not.toBe(initialPhase);
+    expect(component.tabSwitchAnimationPhase).toBe(initialPhase);
   });
 
   it('supports keyboard filter selection using Enter', () => {
@@ -369,12 +503,20 @@ describe('TaskListComponent', () => {
     activeButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     fixture.detectChanges();
 
-    expect(taskService.getTasks).toHaveBeenCalledWith('active');
+    expect(taskService.getTasks).toHaveBeenCalledWith('active', undefined);
   });
 
   it('renders explicit state text labels for tasks', () => {
     const stateText = fixture.nativeElement.querySelector('.state-text') as HTMLElement;
     expect(stateText.textContent).toContain('State: Active');
+  });
+
+  it('defaults edit effort points to 50 when task effort is missing', () => {
+    const editButton = fixture.nativeElement.querySelector('button[aria-label="Edit task Plan sprint backlog"]') as HTMLButtonElement;
+    editButton.click();
+    fixture.detectChanges();
+
+    expect(component.editForm.getRawValue().effortPoints).toBe(50);
   });
 
   it('submits edit updates and reconciles local task state', () => {
@@ -387,7 +529,11 @@ describe('TaskListComponent', () => {
       description: ' Draft story priorities ',
       dueAtUtc: '',
       priority: 'high',
-      category: 'work'
+      category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: '',
+      effortPoints: null
     });
 
     component.submitEdit();
@@ -401,7 +547,11 @@ describe('TaskListComponent', () => {
       description: 'Draft story priorities',
       dueAtUtc: null,
       priority: 'high',
-      category: 'work'
+      category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: null,
+      effortPoints: null
     });
     expect(component.tasks[0].title).toBe('Plan sprint backlog updated');
     expect(component.editingTaskId).toBeNull();
@@ -426,7 +576,11 @@ describe('TaskListComponent', () => {
       description: 'Draft story priorities',
       dueAtUtc: '',
       priority: 'medium',
-      category: 'work'
+      category: 'work',
+      difficulty: 'easy',
+      energyLevel: 'medium',
+      contextTag: '',
+      effortPoints: null
     });
 
     component.submitEdit();
@@ -568,5 +722,25 @@ describe('TaskListComponent', () => {
     expect(component.pendingDeleteTask).not.toBeNull();
     expect(component.deleteErrorMessage).toBe('Forbidden');
     expect(component.tasks.length).toBe(1);
+  });
+
+  it('shows actionable guidance when completed-task deletion is blocked by progression rules', () => {
+    taskService.deleteTask.and.returnValue(throwError(() => ({
+      code: 'tasks.delete.completed.blocked',
+      detail: 'Completed tasks cannot be deleted because progress must remain deterministic.'
+    })));
+
+    const deleteButton = fixture.nativeElement.querySelector('button[aria-label="Delete task Plan sprint backlog"]') as HTMLButtonElement;
+    deleteButton.click();
+    fixture.detectChanges();
+
+    const confirmButton = fixture.nativeElement.querySelector('.delete-confirm-button') as HTMLButtonElement;
+    confirmButton.click();
+    fixture.detectChanges();
+
+    expect(component.pendingDeleteTask).not.toBeNull();
+    expect(component.deleteErrorCode).toBe('tasks.delete.completed.blocked');
+    expect(component.deleteErrorMessage).toContain('cannot be deleted');
+    expect(component.deleteErrorMessage).toContain('deterministic');
   });
 });

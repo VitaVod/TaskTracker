@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using TaskTracker.Api.Features.Account.Repositories;
@@ -13,8 +14,15 @@ using TaskTracker.Api.Features.Auth.Email;
 using TaskTracker.Api.Features.Auth.Repositories;
 using TaskTracker.Api.Features.Auth.Security;
 using TaskTracker.Api.Features.Auth.Tokens;
+using TaskTracker.Api.Features.Integrations.Authentication;
+using TaskTracker.Api.Features.Integrations.Services;
 using TaskTracker.Api.Features.Leaderboards.Repositories;
+using TaskTracker.Api.Features.Notifications.AccountEvents;
+using TaskTracker.Api.Features.Notifications.Reminders;
+using TaskTracker.Api.Features.Notifications.Validation;
+using TaskTracker.Api.Features.Operations.Auditing;
 using TaskTracker.Api.Features.Progress.Repositories;
+using TaskTracker.Api.Features.Progress.Configuration;
 using TaskTracker.Api.Features.SharedViews.Caching;
 using TaskTracker.Api.Features.Statistics.Repositories;
 using TaskTracker.Api.Features.Tasks.Repositories;
@@ -44,6 +52,9 @@ builder.Services.AddDbContext<TaskTrackerDbContext>(options =>
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<PasswordRecoveryOptions>(builder.Configuration.GetSection(PasswordRecoveryOptions.SectionName));
 builder.Services.Configure<SharedViewCacheOptions>(builder.Configuration.GetSection(SharedViewCacheOptions.SectionName));
+builder.Services.Configure<ProgressionLevelOptions>(builder.Configuration.GetSection(ProgressionLevelOptions.SectionName));
+builder.Services.AddHealthChecks()
+    .AddCheck<EmailConfigurationHealthCheck>("email_configuration", tags: ["startup", "ops"]);
 
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 if (!string.IsNullOrWhiteSpace(redisConnectionString))
@@ -63,23 +74,34 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<ITransactionalEmailService, LoggingTransactionalEmailService>();
+builder.Services.AddScoped<IIntegrationCredentialService, IntegrationCredentialService>();
+builder.Services.AddScoped<IIntegrationCredentialValidator, IntegrationCredentialValidator>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 builder.Services.AddScoped<IProgressRepository, ProgressRepository>();
 builder.Services.AddScoped<ILeaderboardRepository, LeaderboardRepository>();
 builder.Services.AddScoped<IGlobalStatisticsRepository, GlobalStatisticsRepository>();
+builder.Services.AddScoped<IReminderProcessingService, ReminderProcessingService>();
+builder.Services.AddScoped<IAccountEventNotificationService, AccountEventNotificationService>();
+builder.Services.AddScoped<IPrivilegedAuditWriter, PrivilegedAuditWriter>();
 builder.Services.AddSingleton<ISharedViewCacheCoordinator, SharedViewCacheCoordinator>();
 builder.Services.AddSingleton<IStreakRuleEngine, StreakRuleEngine>();
 builder.Services.AddScoped<IAuthorizationHandler, RouteUserOwnershipHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, IntegrationScopeAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, TraceableAuthorizationMiddlewareResultHandler>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IAccountUpdateValidator, AccountUpdateValidator>();
+builder.Services.AddSingleton<INotificationPreferencesValidator, NotificationPreferencesValidator>();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("JWT configuration is missing.");
 
 builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
     .AddJwtBearer(options =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
@@ -151,7 +173,10 @@ builder.Services
                 await context.Response.WriteAsJsonAsync(details, cancellationToken: context.HttpContext.RequestAborted);
             }
         };
-    });
+    })
+    .AddScheme<IntegrationAuthenticationOptions, IntegrationAuthenticationHandler>(
+        IntegrationAuthenticationDefaults.Scheme,
+        _ => { });
 
 builder.Services.AddAuthorization(options =>
 {
@@ -168,6 +193,19 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireRole(AppRoles.All);
         policy.Requirements.Add(new OwnershipRequirement("userId", AppRoles.Admin, AppRoles.Support));
+    });
+
+    options.AddPolicy(AppPolicies.IntegrationAuthenticated, policy =>
+    {
+        policy.AddAuthenticationSchemes(IntegrationAuthenticationDefaults.Scheme);
+        policy.RequireAuthenticatedUser();
+    });
+
+    options.AddPolicy(AppPolicies.IntegrationTaskCreateSync, policy =>
+    {
+        policy.AddAuthenticationSchemes(IntegrationAuthenticationDefaults.Scheme);
+        policy.RequireAuthenticatedUser();
+        policy.Requirements.Add(new IntegrationScopeRequirement(IntegrationScopes.TasksCreateSync));
     });
 });
 
@@ -193,6 +231,22 @@ builder.Services.AddControllers()
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+using (var startupScope = app.Services.CreateScope())
+{
+    var startupHealthChecks = startupScope.ServiceProvider.GetRequiredService<HealthCheckService>();
+    var startupLogger = startupScope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("StartupHealthChecks");
+    var startupHealthReport = await startupHealthChecks.CheckHealthAsync(registration => registration.Tags.Contains("startup"));
+
+    if (startupHealthReport.Status == HealthStatus.Healthy)
+    {
+        startupLogger.LogInformation("Startup health checks completed with healthy status.");
+    }
+    else
+    {
+        startupLogger.LogError("Startup health checks reported status {Status}.", startupHealthReport.Status);
+    }
+}
 
 if (app.Environment.IsDevelopment())
 {

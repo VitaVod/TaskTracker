@@ -67,10 +67,51 @@ public class LeaderboardsController(
                     item.PublicIdentity,
                     ToIdentityModeValue(item.IdentityMode),
                     item.AvatarMarker,
-                    item.MetricValue))
+                    item.MetricValue,
+                    item.PublicProfileHandle))
                 .ToArray());
 
         return Ok(response);
+    }
+
+    [HttpGet("profiles/{profileHandle}")]
+    [ProducesResponseType<PublicProfileResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProfile(string profileHandle, CancellationToken cancellationToken)
+    {
+        if (!TryResolveCurrentUserId(out var userId))
+        {
+            return UnauthorizedProblem("leaderboards.identity.invalid");
+        }
+
+        if (!await leaderboardRepository.UserExistsAsync(userId, cancellationToken))
+        {
+            return NotFoundProblem("leaderboards.user.not_found", "User account could not be found.");
+        }
+
+        var profile = await leaderboardRepository.GetPublicProfileAsync(profileHandle, cancellationToken);
+        if (profile is null)
+        {
+            return Ok(new PublicProfileResponse(
+                "anonymous",
+                null,
+                null,
+                null,
+                "This participant keeps leaderboard participation anonymous. Public statistics are unavailable."));
+        }
+
+        return Ok(new PublicProfileResponse(
+            "public",
+            profile.PublicIdentity,
+            profile.AvatarMarker,
+            new PublicProfileStatisticsResponse(
+                profile.CurrentStreakDays,
+                profile.LongestStreakDays,
+                profile.CompletedTaskCount,
+                profile.TotalXp,
+                profile.LastCompletedAtUtc),
+            null));
     }
 
     private bool TryResolveCurrentUserId(out Guid userId)

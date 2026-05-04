@@ -42,6 +42,61 @@ public class ProgressControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal(35, payload.GetProperty("totalXp").GetInt32());
         Assert.Equal(2, payload.GetProperty("ledgerEntryCount").GetInt32());
         Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("lastGrantedAtUtc").GetString()));
+        Assert.Equal(1, payload.GetProperty("levelProgress").GetProperty("currentLevel").GetInt32());
+        Assert.Equal(100, payload.GetProperty("levelProgress").GetProperty("nextLevelThresholdXp").GetInt32());
+        Assert.Equal(35d, payload.GetProperty("levelProgress").GetProperty("percentToNextLevel").GetDouble());
+
+        var bands = payload.GetProperty("levelProgress").GetProperty("bandMilestoneLevels").EnumerateArray().ToArray();
+        Assert.Equal([3, 5, 10, 20, 30, 50], bands.Select(band => band.GetInt32()).ToArray());
+        Assert.Equal(0, payload.GetProperty("levelProgress").GetProperty("reachedBandCount").GetInt32());
+        Assert.Equal(3, payload.GetProperty("levelProgress").GetProperty("nextBandLevel").GetInt32());
+        Assert.Equal(
+            "xp-earned-from-completions",
+            payload.GetProperty("outcomeExplanation").GetProperty("reasonCode").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("outcomeExplanation").GetProperty("message").GetString()));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    [InlineData(20)]
+    [InlineData(30)]
+    [InlineData(50)]
+    public async Task GetXpSummary_WithThresholdBoundaryXp_ResolvesExpectedLevelAndBands(int expectedLevel)
+    {
+        var caller = await RegisterAndLoginWithUserAsync($"progress.xp.boundary.l{expectedLevel}@example.com");
+        var callerTask = await SeedTaskAsync(caller.UserId, $"Caller progression threshold task level {expectedLevel}");
+        var thresholdXp = GetLevelThresholdXp(expectedLevel);
+
+        if (thresholdXp > 0)
+        {
+            await SeedCompletionAndXpAsync(caller.UserId, callerTask.Id, DateTime.UtcNow.AddMinutes(-10), thresholdXp);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/progress/xp-summary");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expectedLevel, payload.GetProperty("levelProgress").GetProperty("currentLevel").GetInt32());
+        Assert.Equal(thresholdXp, payload.GetProperty("levelProgress").GetProperty("currentLevelThresholdXp").GetInt32());
+
+        var expectedReachedBands = new[] { 3, 5, 10, 20, 30, 50 }.Count(level => expectedLevel >= level);
+        Assert.Equal(expectedReachedBands, payload.GetProperty("levelProgress").GetProperty("reachedBandCount").GetInt32());
+
+        var expectedNextBand = new[] { 3, 5, 10, 20, 30, 50 }.FirstOrDefault(level => expectedLevel < level);
+        if (expectedNextBand == 0)
+        {
+            Assert.True(payload.GetProperty("levelProgress").GetProperty("nextBandLevel").ValueKind is JsonValueKind.Null);
+        }
+        else
+        {
+            Assert.Equal(expectedNextBand, payload.GetProperty("levelProgress").GetProperty("nextBandLevel").GetInt32());
+        }
     }
 
     [Fact]
@@ -76,6 +131,89 @@ public class ProgressControllerTests : IClassFixture<AuthTestFactory>
         Assert.Equal(9, payload.GetProperty("longestStreakDays").GetInt32());
         Assert.Equal("UTC", payload.GetProperty("timeZoneId").GetString());
         Assert.Equal(evaluatedAtUtc, payload.GetProperty("lastEvaluatedAtUtc").GetDateTime());
+        Assert.False(payload.GetProperty("isRecoveryPromptVisible").GetBoolean());
+        Assert.True(payload.GetProperty("recoveryReason").ValueKind is JsonValueKind.Null);
+        Assert.True(payload.GetProperty("recommendedAction").ValueKind is JsonValueKind.Null);
+        Assert.Equal(
+            "streak-continued",
+            payload.GetProperty("outcomeExplanation").GetProperty("reasonCode").GetString());
+        Assert.True(payload.GetProperty("recoveryExplanation").ValueKind is JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task GetStreak_WithMissedDayGap_ReturnsRecoveryPromptSignal()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("progress.streak.recovery.miss@example.com");
+        var evaluatedAtUtc = DateTime.UtcNow.AddDays(-3);
+
+        await _factory.UpsertStreakSnapshotAsync(new UserStreakSnapshot
+        {
+            OwnerId = caller.UserId,
+            Outcome = TaskStreakOutcome.Continue,
+            CurrentStreakDays = 6,
+            LongestStreakDays = 9,
+            TimeZoneId = "UTC",
+            EvaluationWindowStartUtc = evaluatedAtUtc.AddHours(-24),
+            EvaluationWindowEndUtc = evaluatedAtUtc,
+            LastEvaluatedEventId = Guid.NewGuid(),
+            LastEvaluationTraceId = "trace-progress-recovery-miss",
+            LastEvaluatedAtUtc = evaluatedAtUtc
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/progress/streak");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(payload.GetProperty("isRecoveryPromptVisible").GetBoolean());
+        Assert.Equal("missed-day-detected", payload.GetProperty("recoveryReason").GetString());
+        Assert.Equal("complete-task-today", payload.GetProperty("recommendedAction").GetString());
+        Assert.Equal(
+            "streak-continued",
+            payload.GetProperty("outcomeExplanation").GetProperty("reasonCode").GetString());
+        Assert.Equal(
+            "missed-day-detected",
+            payload.GetProperty("recoveryExplanation").GetProperty("reasonCode").GetString());
+    }
+
+    [Fact]
+    public async Task GetStreak_WithRestartOutcome_ReturnsSupportiveRecoverySignal()
+    {
+        var caller = await RegisterAndLoginWithUserAsync("progress.streak.recovery.restart@example.com");
+        var evaluatedAtUtc = DateTime.UtcNow.AddHours(-2);
+
+        await _factory.UpsertStreakSnapshotAsync(new UserStreakSnapshot
+        {
+            OwnerId = caller.UserId,
+            Outcome = TaskStreakOutcome.Restart,
+            CurrentStreakDays = 1,
+            LongestStreakDays = 12,
+            TimeZoneId = "Pacific Standard Time",
+            EvaluationWindowStartUtc = evaluatedAtUtc.AddHours(-24),
+            EvaluationWindowEndUtc = evaluatedAtUtc,
+            LastEvaluatedEventId = Guid.NewGuid(),
+            LastEvaluationTraceId = "trace-progress-recovery-restart",
+            LastEvaluatedAtUtc = evaluatedAtUtc
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/progress/streak");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller.Tokens.AccessToken);
+
+        var response = await _client.SendAsync(request);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(payload.GetProperty("isRecoveryPromptVisible").GetBoolean());
+        Assert.Equal("streak-restarted", payload.GetProperty("recoveryReason").GetString());
+        Assert.Equal("maintain-tomorrow", payload.GetProperty("recommendedAction").GetString());
+        Assert.Equal(
+            "streak-restarted",
+            payload.GetProperty("outcomeExplanation").GetProperty("reasonCode").GetString());
+        Assert.Equal(
+            "streak-restarted",
+            payload.GetProperty("recoveryExplanation").GetProperty("reasonCode").GetString());
     }
 
     [Fact]
@@ -233,5 +371,25 @@ public class ProgressControllerTests : IClassFixture<AuthTestFactory>
             OccurredAtUtc = occurredAtUtc,
             CreatedAtUtc = occurredAtUtc
         });
+    }
+
+    private static int GetLevelThresholdXp(int level)
+    {
+        if (level <= 1)
+        {
+            return 0;
+        }
+
+        var thresholdXp = 0;
+        const int baseXpPerLevel = 100;
+        const int growthXpPerLevel = 25;
+
+        for (var currentLevel = 2; currentLevel <= level; currentLevel++)
+        {
+            var increment = baseXpPerLevel + ((currentLevel - 2) * growthXpPerLevel);
+            thresholdXp += increment;
+        }
+
+        return thresholdXp;
     }
 }

@@ -2,10 +2,28 @@ import { TaskProblemDetails, TaskStreakOutcome } from './task.models';
 
 export type ProgressTrendGranularity = 'daily' | 'weekly';
 
+export interface ProgressExplanation {
+  reasonCode: string;
+  message: string;
+}
+
 export interface ProgressXpSummary {
   totalXp: number;
   ledgerEntryCount: number;
   lastGrantedAtUtc: string | null;
+  levelProgress: ProgressLevelSnapshot;
+  outcomeExplanation: ProgressExplanation;
+}
+
+export interface ProgressLevelSnapshot {
+  currentLevel: number;
+  currentLevelThresholdXp: number;
+  nextLevel: number;
+  nextLevelThresholdXp: number;
+  percentToNextLevel: number;
+  bandMilestoneLevels: number[];
+  reachedBandCount: number;
+  nextBandLevel: number | null;
 }
 
 export interface ProgressStreakSnapshot {
@@ -16,6 +34,11 @@ export interface ProgressStreakSnapshot {
   evaluationWindowStartUtc: string;
   evaluationWindowEndUtc: string;
   lastEvaluatedAtUtc: string;
+  isRecoveryPromptVisible: boolean;
+  recoveryReason: string | null;
+  recommendedAction: string | null;
+  outcomeExplanation: ProgressExplanation;
+  recoveryExplanation: ProgressExplanation | null;
 }
 
 export interface ProgressTrendPoint {

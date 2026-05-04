@@ -8,10 +8,26 @@ public enum ProgressTrendGranularity
 
 public record ProgressTrendQuery(string? Granularity, int? WindowDays);
 
+public record ProgressExplanationResponse(
+    string ReasonCode,
+    string Message);
+
+public record ProgressLevelSnapshotResponse(
+    int CurrentLevel,
+    int CurrentLevelThresholdXp,
+    int NextLevel,
+    int NextLevelThresholdXp,
+    double PercentToNextLevel,
+    IReadOnlyCollection<int> BandMilestoneLevels,
+    int ReachedBandCount,
+    int? NextBandLevel);
+
 public record ProgressXpSummaryResponse(
     int TotalXp,
     int LedgerEntryCount,
-    DateTime? LastGrantedAtUtc);
+    DateTime? LastGrantedAtUtc,
+    ProgressLevelSnapshotResponse LevelProgress,
+    ProgressExplanationResponse OutcomeExplanation);
 
 public record ProgressStreakSnapshotResponse(
     TaskTracker.Api.Features.Tasks.Contracts.TaskStreakOutcome Outcome,
@@ -20,7 +36,12 @@ public record ProgressStreakSnapshotResponse(
     string TimeZoneId,
     DateTime EvaluationWindowStartUtc,
     DateTime EvaluationWindowEndUtc,
-    DateTime LastEvaluatedAtUtc);
+    DateTime LastEvaluatedAtUtc,
+    bool IsRecoveryPromptVisible,
+    string? RecoveryReason,
+    string? RecommendedAction,
+    ProgressExplanationResponse OutcomeExplanation,
+    ProgressExplanationResponse? RecoveryExplanation);
 
 public record ProgressTrendPointResponse(
     DateTime BucketStartUtc,

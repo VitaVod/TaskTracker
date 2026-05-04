@@ -6,6 +6,7 @@ using TaskTracker.Api.Features.Auth.Contracts;
 using TaskTracker.Api.Features.Auth.Email;
 using TaskTracker.Api.Features.Auth.Repositories;
 using TaskTracker.Api.Features.Auth.Tokens;
+using TaskTracker.Api.Features.Notifications.AccountEvents;
 using TaskTracker.Api.Infrastructure.Persistence.Entities;
 
 namespace TaskTracker.Api.Controllers;
@@ -15,14 +16,13 @@ namespace TaskTracker.Api.Controllers;
 public class AuthController(
     IAuthRepository authRepository,
     IJwtTokenService tokenService,
-    ITransactionalEmailService transactionalEmailService,
+    IAccountEventNotificationService accountEventNotificationService,
     IOptions<PasswordRecoveryOptions> passwordRecoveryOptions,
     IOptions<JwtOptions> jwtOptions,
     ILogger<AuthController> logger) : ControllerBase
 {
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
     private readonly PasswordRecoveryOptions _passwordRecoveryOptions = passwordRecoveryOptions.Value;
-    private const int PasswordRecoveryMaxDeliveryAttempts = 3;
     private static readonly TimeSpan PasswordRecoveryLifetime = TimeSpan.FromMinutes(30);
 
     /// <summary>
@@ -205,10 +205,30 @@ public class AuthController(
                 HttpContext.TraceIdentifier);
 
             var recoveryLink = BuildRecoveryLink(issued.PlainTextToken);
-            await DeliverRecoveryEmailWithRetryAsync(issued, recoveryLink, cancellationToken);
+            try
+            {
+                await accountEventNotificationService.NotifyPasswordRecoveryRequestedAsync(
+                    issued.UserId,
+                    issued.Email,
+                    issued.TokenId,
+                    recoveryLink,
+                    issued.ExpiresAtUtc,
+                    HttpContext.TraceIdentifier,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Password recovery notification failed after token issuance. UserId={UserId}. TokenId={TokenId}. TraceId={TraceId}",
+                    issued.UserId,
+                    issued.TokenId,
+                    HttpContext.TraceIdentifier);
+            }
         }
 
-        return Accepted(new PasswordRecoveryRequestResponse("If the account exists, a recovery email has been sent."));
+        return Accepted(new PasswordRecoveryRequestResponse(
+            "If the account exists, a recovery email has been sent. If you do not receive it within 10 minutes, check spam, then retry the request or contact support with the request trace ID."));
     }
 
     [AllowAnonymous]
@@ -231,6 +251,26 @@ public class AuthController(
 
         if (result.Outcome == PasswordResetWithRecoveryOutcome.Success)
         {
+            if (result.UserId is not null && !string.IsNullOrWhiteSpace(result.Email))
+            {
+                try
+                {
+                    await accountEventNotificationService.NotifyPasswordResetCompletedAsync(
+                        result.UserId.Value,
+                        result.Email,
+                        HttpContext.TraceIdentifier,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Password reset completion notification failed. UserId={UserId}. TraceId={TraceId}",
+                        result.UserId.Value,
+                        HttpContext.TraceIdentifier);
+                }
+            }
+
             logger.LogInformation("Password reset completed through recovery flow. TraceId: {TraceId}", HttpContext.TraceIdentifier);
             return Ok(new PasswordRecoveryConfirmResponse("Password updated successfully"));
         }
@@ -246,57 +286,6 @@ public class AuthController(
             HttpContext.TraceIdentifier);
 
         return PasswordRecoveryInvalidProblem();
-    }
-
-    private async Task DeliverRecoveryEmailWithRetryAsync(
-        PasswordRecoveryIssuanceResult issuance,
-        string recoveryLink,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; attempt <= PasswordRecoveryMaxDeliveryAttempts; attempt++)
-        {
-            logger.LogInformation(
-                "Password recovery delivery attempt {Attempt}/{MaxAttempts}. TokenId: {TokenId}. TraceId: {TraceId}",
-                attempt,
-                PasswordRecoveryMaxDeliveryAttempts,
-                issuance.TokenId,
-                HttpContext.TraceIdentifier);
-
-            var sendResult = await transactionalEmailService.SendPasswordRecoveryAsync(
-                new PasswordRecoveryEmailMessage(issuance.TokenId, issuance.Email, recoveryLink, issuance.ExpiresAtUtc),
-                cancellationToken);
-
-            var success = sendResult == TransactionalEmailSendResult.Success;
-            await authRepository.RecordPasswordRecoveryDeliveryAttemptAsync(
-                issuance.TokenId,
-                DateTime.UtcNow,
-                success,
-                cancellationToken);
-
-            if (success)
-            {
-                logger.LogInformation(
-                    "Password recovery delivery succeeded. TokenId: {TokenId}. Attempt={Attempt}. TraceId: {TraceId}",
-                    issuance.TokenId,
-                    attempt,
-                    HttpContext.TraceIdentifier);
-                return;
-            }
-
-            if (sendResult == TransactionalEmailSendResult.PermanentFailure)
-            {
-                logger.LogWarning(
-                    "Password recovery delivery failed permanently. TokenId: {TokenId}. TraceId: {TraceId}",
-                    issuance.TokenId,
-                    HttpContext.TraceIdentifier);
-                return;
-            }
-        }
-
-        logger.LogError(
-            "Password recovery delivery failed after retries. TokenId: {TokenId}. TraceId: {TraceId}",
-            issuance.TokenId,
-            HttpContext.TraceIdentifier);
     }
 
     private string BuildRecoveryLink(string rawToken)

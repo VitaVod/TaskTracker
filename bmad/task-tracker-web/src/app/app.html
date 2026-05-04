@@ -1,3 +1,38 @@
+@if (showPrimaryTabs()) {
+	<header class="app-header" aria-label="Primary navigation">
+		<a class="app-brand" routerLink="/landing" aria-label="Go to landing page">TASKTRACKER v1.0</a>
+
+		<nav class="app-tabs" aria-label="App sections">
+			@for (tab of primaryTabs; track tab.route) {
+				<a
+					[routerLink]="tab.route"
+					routerLinkActive="active"
+					[routerLinkActiveOptions]="{ exact: true }"
+					class="app-tab">
+					<span class="app-tab-icon" aria-hidden="true">{{ tab.icon }}</span>
+					<span>{{ tab.label }}</span>
+				</a>
+			}
+		</nav>
+
+		<button
+			type="button"
+			class="logout-button"
+			(click)="onLogout()"
+			[disabled]="isLoggingOut"
+			aria-label="Logout">
+			<span class="logout-icon" aria-hidden="true">
+				<svg viewBox="0 0 24 24" focusable="false">
+					<path d="M15 3h-4a3 3 0 0 0-3 3v2h2V6a1 1 0 0 1 1-1h4z" />
+					<path d="M8 10h8.17l-1.58-1.59L16 7l4 4-4 4-1.41-1.41L16.17 12H8z" />
+					<path d="M15 21h-4a1 1 0 0 1-1-1v-2H8v2a3 3 0 0 0 3 3h4z" />
+				</svg>
+			</span>
+			<span>{{ isLoggingOut ? 'Logging out...' : 'Logout' }}</span>
+		</button>
+	</header>
+}
+
 <router-outlet />
 
 @if (isLoading()) {

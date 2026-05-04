@@ -8,7 +8,9 @@ public sealed record StreakEvaluationResult(
     int CurrentStreakDays,
     int LongestStreakDays,
     DateTime EvaluationWindowStartUtc,
-    DateTime EvaluationWindowEndUtc);
+    DateTime EvaluationWindowEndUtc,
+    bool RecoveryTokenConsumed,
+    int RemainingRecoveryTokens);
 
 public interface IStreakRuleEngine
 {
@@ -16,7 +18,8 @@ public interface IStreakRuleEngine
         string timeZoneId,
         DateTime evaluationOccurredAtUtc,
         bool resultingIsCompleted,
-        IReadOnlyCollection<DateTime> completionOccurredAtUtc);
+        IReadOnlyCollection<DateTime> completionOccurredAtUtc,
+        int availableRecoveryTokens = 0);
 }
 
 public class StreakRuleEngine : IStreakRuleEngine
@@ -25,7 +28,8 @@ public class StreakRuleEngine : IStreakRuleEngine
         string timeZoneId,
         DateTime evaluationOccurredAtUtc,
         bool resultingIsCompleted,
-        IReadOnlyCollection<DateTime> completionOccurredAtUtc)
+        IReadOnlyCollection<DateTime> completionOccurredAtUtc,
+        int availableRecoveryTokens = 0)
     {
         var timeZone = TZConvert.GetTimeZoneInfo(timeZoneId);
         var evaluationUtc = EnsureUtc(evaluationOccurredAtUtc);
@@ -40,6 +44,8 @@ public class StreakRuleEngine : IStreakRuleEngine
 
         var longestStreakDays = ComputeLongestStreak(completionDates);
         var currentStreakDays = 0;
+    var recoveryTokenConsumed = false;
+    var remainingRecoveryTokens = Math.Max(0, availableRecoveryTokens);
         TaskStreakOutcome outcome;
 
         if (!resultingIsCompleted)
@@ -60,12 +66,26 @@ public class StreakRuleEngine : IStreakRuleEngine
             else
             {
                 var dayGap = evaluationLocalDate.DayNumber - lastCompletionBeforeEvaluation.DayNumber;
-                outcome = dayGap <= 1
-                    ? TaskStreakOutcome.Continue
-                    : TaskStreakOutcome.Restart;
+                if (dayGap <= 1)
+                {
+                    outcome = TaskStreakOutcome.Continue;
+                }
+                else if (dayGap == 2 && remainingRecoveryTokens > 0)
+                {
+                    outcome = TaskStreakOutcome.Continue;
+                    recoveryTokenConsumed = true;
+                    remainingRecoveryTokens--;
+                }
+                else
+                {
+                    outcome = TaskStreakOutcome.Restart;
+                }
             }
 
-            currentStreakDays = ComputeCurrentStreak(completionDates, evaluationLocalDate);
+            currentStreakDays = ComputeCurrentStreak(
+                completionDates,
+                evaluationLocalDate,
+                allowSingleBridge: recoveryTokenConsumed);
             longestStreakDays = Math.Max(longestStreakDays, currentStreakDays);
         }
 
@@ -77,7 +97,9 @@ public class StreakRuleEngine : IStreakRuleEngine
             currentStreakDays,
             longestStreakDays,
             evaluationWindowStartUtc,
-            evaluationWindowEndUtc);
+            evaluationWindowEndUtc,
+            recoveryTokenConsumed,
+            remainingRecoveryTokens);
     }
 
     private static DateTime EnsureUtc(DateTime value)
@@ -118,7 +140,10 @@ public class StreakRuleEngine : IStreakRuleEngine
         return longest;
     }
 
-    private static int ComputeCurrentStreak(IReadOnlyList<DateOnly> completionDates, DateOnly evaluationLocalDate)
+    private static int ComputeCurrentStreak(
+        IReadOnlyList<DateOnly> completionDates,
+        DateOnly evaluationLocalDate,
+        bool allowSingleBridge)
     {
         if (completionDates.Count == 0)
         {
@@ -133,11 +158,26 @@ public class StreakRuleEngine : IStreakRuleEngine
 
         var streakLength = 0;
         var cursor = evaluationLocalDate;
+        var bridgeAvailable = allowSingleBridge;
 
-        while (completionDateSet.Contains(cursor))
+        while (true)
         {
-            streakLength++;
-            cursor = cursor.AddDays(-1);
+            if (completionDateSet.Contains(cursor))
+            {
+                streakLength++;
+                cursor = cursor.AddDays(-1);
+                continue;
+            }
+
+            if (bridgeAvailable && completionDateSet.Contains(cursor.AddDays(-1)))
+            {
+                streakLength++;
+                bridgeAvailable = false;
+                cursor = cursor.AddDays(-1);
+                continue;
+            }
+
+            break;
         }
 
         return streakLength;
